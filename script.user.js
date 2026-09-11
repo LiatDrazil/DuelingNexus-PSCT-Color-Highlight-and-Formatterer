@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         DuelingNexus - PSCT Color Highlighter
 // @namespace    https://github.com/LiatDrazil
-// @version      1.4.0
+// @version      1.5.0
 // @description  Highlights PSCT conditions and costs with dark-theme friendly colors
-// @author       Liat Drazil
+// @author       LiatDrazil
 // @match        https://duelingnexus.com/duel/*
 // @match        https://duelingnexus.com/replay/*
 // @match        https://duelingnexus.com/game/*
@@ -32,31 +32,41 @@
             .replace(/>/g, "&gt;");
     }
 
+    // Helper to find punctuation indices ignoring text inside quotes
+    function findPSCTPunctuation(str, char) {
+        let inQuotes = false;
+        for (let i = 0; i < str.length; i++) {
+            const current = str[i];
+            if (current === '"' || current === '“' || current === '”' || current === "'") {
+                inQuotes = !inQuotes;
+            } else if (current === char && !inQuotes) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     // Processes each sentence to strictly follow PSCT syntax
     function formatSentencePSCT(sentence) {
         if (!sentence.trim()) return sentence;
 
         let result = sentence;
+        const colonIndex = findPSCTPunctuation(result, ':');
+        const semicolonIndex = findPSCTPunctuation(result, ';');
 
-        // Case 1: Contains both Condition (:) and Cost (;) in the same sentence -> "Condition: Cost; Effect."
-        if (result.includes(':') && result.includes(';')) {
-            const colonIndex = result.indexOf(':');
-            const semicolonIndex = result.indexOf(';');
+        // Case 1: Contains both Condition (:) and Cost (;) -> "Condition: Cost; Effect."
+        if (colonIndex !== -1 && semicolonIndex !== -1 && colonIndex < semicolonIndex) {
+            const conditionPart = result.substring(0, colonIndex + 1);
+            const costPart = result.substring(colonIndex + 1, semicolonIndex + 1);
+            const effectPart = result.substring(semicolonIndex + 1);
 
-            if (colonIndex < semicolonIndex) {
-                const conditionPart = result.substring(0, colonIndex + 1);
-                const costPart = result.substring(colonIndex + 1, semicolonIndex + 1);
-                const effectPart = result.substring(semicolonIndex + 1);
-
-                return `<span style="color: ${PSCT_COLORS.condition}; font-weight: 500;">${escapeHTML(conditionPart)}</span>` +
-                       `<span style="color: ${PSCT_COLORS.cost}; font-weight: 500;">${escapeHTML(costPart)}</span>` +
-                       escapeHTML(effectPart);
-            }
+            return `<span style="color: ${PSCT_COLORS.condition}; font-weight: 500;">${escapeHTML(conditionPart)}</span>` +
+                   `<span style="color: ${PSCT_COLORS.cost}; font-weight: 500;">${escapeHTML(costPart)}</span>` +
+                   escapeHTML(effectPart);
         }
 
         // Case 2: Contains Condition only (:) -> "Condition: Effect."
-        if (result.includes(':')) {
-            const colonIndex = result.indexOf(':');
+        if (colonIndex !== -1) {
             const conditionPart = result.substring(0, colonIndex + 1);
             const effectPart = result.substring(colonIndex + 1);
 
@@ -65,8 +75,7 @@
         }
 
         // Case 3: Contains Cost only (;) -> "Cost; Effect."
-        if (result.includes(';')) {
-            const semicolonIndex = result.indexOf(';');
+        if (semicolonIndex !== -1) {
             const costPart = result.substring(0, semicolonIndex + 1);
             const effectPart = result.substring(semicolonIndex + 1);
 
