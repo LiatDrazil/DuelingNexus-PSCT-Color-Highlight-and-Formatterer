@@ -1,0 +1,119 @@
+// ==UserScript==
+// @name         DuelingNexus - PSCT Color
+// @namespace    https://github.com/LiatDrazil
+// @version      1.4.0
+// @description  Only highlights PSCT conditions and costs with dark-theme friendly colors
+// @author       Liat Drazil
+// @match        https://duelingnexus.com/duel/*
+// @match        https://duelingnexus.com/replay/*
+// @match        https://duelingnexus.com/game/*
+// @match        https://duelingnexus.com/editor/*
+// @grant        none
+// ==/UserScript==
+
+(function () {
+    'use strict';
+
+    // ============================================
+    // PALETA DE CORES (Agradável para Tema Escuro)
+    // ============================================
+    const PSCT_COLORS = {
+        condition: '#F1FA8C', // Amarelo Pastel (Condição antes do ":")
+        cost: '#FF79C6'       // Rosa/Magenta Pastel (Custo antes do ";")
+    };
+
+    // Escapar HTML para segurança
+    function escapeHTML(str) {
+        return str
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
+    }
+
+    // Processa cada frase individualmente para respeitar o PSCT exato
+    function formatSentencePSCT(sentence) {
+        if (!sentence.trim()) return sentence;
+
+        let result = sentence;
+
+        // Caso 1: Tem Condição (:) e Custo (;) na mesma frase -> "Condição: Custo; Efeito."
+        if (result.includes(':') && result.includes(';')) {
+            const colonIndex = result.indexOf(':');
+            const semicolonIndex = result.indexOf(';');
+
+            if (colonIndex < semicolonIndex) {
+                const conditionPart = result.substring(0, colonIndex + 1);
+                const costPart = result.substring(colonIndex + 1, semicolonIndex + 1);
+                const effectPart = result.substring(semicolonIndex + 1);
+
+                return `<span style="color: ${PSCT_COLORS.condition}; font-weight: 500;">${escapeHTML(conditionPart)}</span>` +
+                       `<span style="color: ${PSCT_COLORS.cost}; font-weight: 500;">${escapeHTML(costPart)}</span>` +
+                       escapeHTML(effectPart);
+            }
+        }
+
+        // Caso 2: Tem apenas Condição (:) -> "Condição: Efeito."
+        if (result.includes(':')) {
+            const colonIndex = result.indexOf(':');
+            const conditionPart = result.substring(0, colonIndex + 1);
+            const effectPart = result.substring(colonIndex + 1);
+
+            return `<span style="color: ${PSCT_COLORS.condition}; font-weight: 500;">${escapeHTML(conditionPart)}</span>` +
+                   escapeHTML(effectPart);
+        }
+
+        // Caso 3: Tem apenas Custo (;) -> "Custo; Efeito."
+        if (result.includes(';')) {
+            const semicolonIndex = result.indexOf(';');
+            const costPart = result.substring(0, semicolonIndex + 1);
+            const effectPart = result.substring(semicolonIndex + 1);
+
+            return `<span style="color: ${PSCT_COLORS.cost}; font-weight: 500;">${escapeHTML(costPart)}</span>` +
+                   escapeHTML(effectPart);
+        }
+
+        // Caso 4: Apenas Efeito (sem : ou ;)
+        return escapeHTML(result);
+    }
+
+    function processText(text) {
+        if (!text) return text;
+
+        // Processa as linhas mantendo exatamente as quebras originais da carta
+        const lines = text.split('\n');
+        const processedLines = lines.map(line => formatSentencePSCT(line));
+
+        return processedLines.join('\n');
+    }
+
+    function processCardDescription() {
+        const cardDescription = document.getElementById('card-description');
+        if (!cardDescription) return;
+
+        // Recupera o texto puro mantido pelo DuelingNexus
+        const rawText = cardDescription.innerText || cardDescription.textContent;
+        if (!rawText) return;
+
+        // Se o texto não mudou desde a última formatação, ignora
+        if (cardDescription.getAttribute('data-raw-cache') === rawText) return;
+
+        // Salva a cópia bruta no atributo de cache
+        cardDescription.setAttribute('data-raw-cache', rawText);
+
+        // Renderiza o HTML apenas com as cores aplicadas
+        cardDescription.innerHTML = processText(rawText);
+    }
+
+    // ============================================
+    // INICIALIZAÇÃO
+    // ============================================
+    function init() {
+        setInterval(processCardDescription, 100);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();
