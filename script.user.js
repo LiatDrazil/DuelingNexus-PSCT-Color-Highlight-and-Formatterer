@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         DuelingNexus - PSCT Color
+// @name         DuelingNexus - PSCT Color Highlighter
 // @namespace    https://github.com/LiatDrazil
 // @version      1.4.0
-// @description  Only highlights PSCT conditions and costs with dark-theme friendly colors
+// @description  Highlights PSCT conditions and costs with dark-theme friendly colors
 // @author       Liat Drazil
 // @match        https://duelingnexus.com/duel/*
 // @match        https://duelingnexus.com/replay/*
@@ -17,14 +17,14 @@
     'use strict';
 
     // ============================================
-    // PALETA DE CORES (Agradável para Tema Escuro)
+    // COLOR PALETTE (Dark-Theme Friendly)
     // ============================================
     const PSCT_COLORS = {
-        condition: '#F1FA8C', // Amarelo Pastel (Condição antes do ":")
-        cost: '#FF79C6'       // Rosa/Magenta Pastel (Custo antes do ";")
+        condition: '#F1FA8C', // Soft Pastel Yellow (Condition before ":")
+        cost: '#FF79C6'       // Soft Pastel Pink/Magenta (Cost before ";")
     };
 
-    // Escapar HTML para segurança
+    // Escape HTML characters for safety
     function escapeHTML(str) {
         return str
             .replace(/&/g, "&amp;")
@@ -32,13 +32,13 @@
             .replace(/>/g, "&gt;");
     }
 
-    // Processa cada frase individualmente para respeitar o PSCT exato
+    // Processes each sentence to strictly follow PSCT syntax
     function formatSentencePSCT(sentence) {
         if (!sentence.trim()) return sentence;
 
         let result = sentence;
 
-        // Caso 1: Tem Condição (:) e Custo (;) na mesma frase -> "Condição: Custo; Efeito."
+        // Case 1: Contains both Condition (:) and Cost (;) in the same sentence -> "Condition: Cost; Effect."
         if (result.includes(':') && result.includes(';')) {
             const colonIndex = result.indexOf(':');
             const semicolonIndex = result.indexOf(';');
@@ -54,7 +54,7 @@
             }
         }
 
-        // Caso 2: Tem apenas Condição (:) -> "Condição: Efeito."
+        // Case 2: Contains Condition only (:) -> "Condition: Effect."
         if (result.includes(':')) {
             const colonIndex = result.indexOf(':');
             const conditionPart = result.substring(0, colonIndex + 1);
@@ -64,7 +64,7 @@
                    escapeHTML(effectPart);
         }
 
-        // Caso 3: Tem apenas Custo (;) -> "Custo; Efeito."
+        // Case 3: Contains Cost only (;) -> "Cost; Effect."
         if (result.includes(';')) {
             const semicolonIndex = result.indexOf(';');
             const costPart = result.substring(0, semicolonIndex + 1);
@@ -74,14 +74,14 @@
                    escapeHTML(effectPart);
         }
 
-        // Caso 4: Apenas Efeito (sem : ou ;)
+        // Case 4: Effect only (no : or ;)
         return escapeHTML(result);
     }
 
     function processText(text) {
         if (!text) return text;
 
-        // Processa as linhas mantendo exatamente as quebras originais da carta
+        // Process lines while preserving the original card line breaks
         const lines = text.split('\n');
         const processedLines = lines.map(line => formatSentencePSCT(line));
 
@@ -92,22 +92,22 @@
         const cardDescription = document.getElementById('card-description');
         if (!cardDescription) return;
 
-        // Recupera o texto puro mantido pelo DuelingNexus
+        // Retrieve raw text maintained by DuelingNexus
         const rawText = cardDescription.innerText || cardDescription.textContent;
         if (!rawText) return;
 
-        // Se o texto não mudou desde a última formatação, ignora
+        // Skip if text hasn't changed since last cycle
         if (cardDescription.getAttribute('data-raw-cache') === rawText) return;
 
-        // Salva a cópia bruta no atributo de cache
+        // Cache the raw string
         cardDescription.setAttribute('data-raw-cache', rawText);
 
-        // Renderiza o HTML apenas com as cores aplicadas
+        // Render formatted HTML with colors applied
         cardDescription.innerHTML = processText(rawText);
     }
 
     // ============================================
-    // INICIALIZAÇÃO
+    // INITIALIZATION
     // ============================================
     function init() {
         setInterval(processCardDescription, 100);
