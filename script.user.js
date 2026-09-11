@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DuelingNexus - PSCT Color Highlighter
 // @namespace    https://github.com/LiatDrazil
-// @version      1.5.0
+// @version      1.5.2
 // @description  Highlights PSCT conditions and costs with dark-theme friendly colors
 // @author       LiatDrazil
 // @match        https://duelingnexus.com/duel/*
@@ -32,18 +32,14 @@
             .replace(/>/g, "&gt;");
     }
 
-    // Helper to find punctuation indices ignoring text strictly inside quotes
+    // Helper to find punctuation indices ignoring text inside quotes
     function findPSCTPunctuation(str, char) {
         let inQuotes = false;
         for (let i = 0; i < str.length; i++) {
             const current = str[i];
-
-            // Detect single or double quotes
-            if (current === '"' || current === '“' || current === '”') {
+            if (current === '"' || current === '“' || current === '”' || current === "'") {
                 inQuotes = !inQuotes;
-            }
-            // Only ignore the character if it is inside quotes
-            else if (current === char && !inQuotes) {
+            } else if (current === char && !inQuotes) {
                 return i;
             }
         }
@@ -54,41 +50,68 @@
     function formatSentencePSCT(sentence) {
         if (!sentence.trim()) return sentence;
 
-        let result = sentence;
-        const colonIndex = findPSCTPunctuation(result, ':');
-        const semicolonIndex = findPSCTPunctuation(result, ';');
+        let prefix = "";
+        let targetText = sentence;
+
+        const colonIndexRaw = findPSCTPunctuation(sentence, ':');
+        const semicolonIndexRaw = findPSCTPunctuation(sentence, ';');
+
+        // Find the earliest PSCT delimiter present in the line
+        let firstDelimiterIndex = -1;
+        if (colonIndexRaw !== -1 && semicolonIndexRaw !== -1) {
+            firstDelimiterIndex = Math.min(colonIndexRaw, semicolonIndexRaw);
+        } else if (colonIndexRaw !== -1) {
+            firstDelimiterIndex = colonIndexRaw;
+        } else if (semicolonIndexRaw !== -1) {
+            firstDelimiterIndex = semicolonIndexRaw;
+        }
+
+        // If there's a period before the first PSCT delimiter, split the un-activated effect off first
+        if (firstDelimiterIndex !== -1) {
+            const lastPeriodBeforeDelimiter = sentence.lastIndexOf('.', firstDelimiterIndex);
+            if (lastPeriodBeforeDelimiter !== -1) {
+                prefix = escapeHTML(sentence.substring(0, lastPeriodBeforeDelimiter + 1));
+                targetText = sentence.substring(lastPeriodBeforeDelimiter + 1);
+            }
+        }
+
+        const colonIndex = findPSCTPunctuation(targetText, ':');
+        const semicolonIndex = findPSCTPunctuation(targetText, ';');
 
         // Case 1: Contains both Condition (:) and Cost (;) -> "Condition: Cost; Effect."
         if (colonIndex !== -1 && semicolonIndex !== -1 && colonIndex < semicolonIndex) {
-            const conditionPart = result.substring(0, colonIndex + 1);
-            const costPart = result.substring(colonIndex + 1, semicolonIndex + 1);
-            const effectPart = result.substring(semicolonIndex + 1);
+            const conditionPart = targetText.substring(0, colonIndex + 1);
+            const costPart = targetText.substring(colonIndex + 1, semicolonIndex + 1);
+            const effectPart = targetText.substring(semicolonIndex + 1);
 
-            return `<span style="color: ${PSCT_COLORS.condition}; font-weight: 500;">${escapeHTML(conditionPart)}</span>` +
+            return prefix +
+                   `<span style="color: ${PSCT_COLORS.condition}; font-weight: 500;">${escapeHTML(conditionPart)}</span>` +
                    `<span style="color: ${PSCT_COLORS.cost}; font-weight: 500;">${escapeHTML(costPart)}</span>` +
                    escapeHTML(effectPart);
         }
 
         // Case 2: Contains Condition only (:) -> "Condition: Effect."
         if (colonIndex !== -1) {
-            const conditionPart = result.substring(0, colonIndex + 1);
-            const effectPart = result.substring(colonIndex + 1);
+            const conditionPart = targetText.substring(0, colonIndex + 1);
+            const effectPart = targetText.substring(colonIndex + 1);
 
-            return `<span style="color: ${PSCT_COLORS.condition}; font-weight: 500;">${escapeHTML(conditionPart)}</span>` +
+            return prefix +
+                   `<span style="color: ${PSCT_COLORS.condition}; font-weight: 500;">${escapeHTML(conditionPart)}</span>` +
                    escapeHTML(effectPart);
         }
 
         // Case 3: Contains Cost only (;) -> "Cost; Effect."
         if (semicolonIndex !== -1) {
-            const costPart = result.substring(0, semicolonIndex + 1);
-            const effectPart = result.substring(semicolonIndex + 1);
+            const costPart = targetText.substring(0, semicolonIndex + 1);
+            const effectPart = targetText.substring(semicolonIndex + 1);
 
-            return `<span style="color: ${PSCT_COLORS.cost}; font-weight: 500;">${escapeHTML(costPart)}</span>` +
+            return prefix +
+                   `<span style="color: ${PSCT_COLORS.cost}; font-weight: 500;">${escapeHTML(costPart)}</span>` +
                    escapeHTML(effectPart);
         }
 
         // Case 4: Effect only (no : or ;)
-        return escapeHTML(result);
+        return escapeHTML(sentence);
     }
 
     function processText(text) {
