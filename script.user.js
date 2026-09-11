@@ -32,14 +32,18 @@
             .replace(/>/g, "&gt;");
     }
 
-    // Helper to find punctuation indices ignoring text inside quotes
+    // Helper to find punctuation indices ignoring text strictly inside quotes
     function findPSCTPunctuation(str, char) {
         let inQuotes = false;
         for (let i = 0; i < str.length; i++) {
             const current = str[i];
-            if (current === '"' || current === '“' || current === '”' || current === "'") {
+
+            // Detect single or double quotes
+            if (current === '"' || current === '“' || current === '”') {
                 inQuotes = !inQuotes;
-            } else if (current === char && !inQuotes) {
+            }
+            // Only ignore the character if it is inside quotes
+            else if (current === char && !inQuotes) {
                 return i;
             }
         }
