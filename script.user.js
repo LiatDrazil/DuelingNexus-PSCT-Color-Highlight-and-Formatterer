@@ -9,6 +9,8 @@
 // @match        https://duelingnexus.com/game/*
 // @match        https://duelingnexus.com/editor/*
 // @grant        none
+// @downloadURL  https://raw.githubusercontent.com/LiatDrazil/DuelingNexus-PSCT-Color-Highlighter/main/script.user.js
+// @updateURL    https://raw.githubusercontent.com/LiatDrazil/DuelingNexus-PSCT-Color-Highlighter/main/script.user.js
 // ==/UserScript==
 
 (function () {
