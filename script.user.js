@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DuelingNexus - PSCT Color Highlighter & Formatter
 // @namespace    https://github.com/LiatDrazil
-// @version      1.9.7
+// @version      1.9.10
 // @description  Highlights PSCT conditions/costs and automatically formats card text spacing
 // @author       LiatDrazil
 // @match        https://duelingnexus.com/duel/*
@@ -171,11 +171,10 @@
         return formattedBlocks.filter(b => b.length > 0).join('<br><br>');
     }
 
-    let observer = null;
+    let isProcessing = false;
 
     /**
-     * Reads text from the card container, formats it, and injects the updated HTML.
-     * Uses a cache attribute to avoid redundant re-renders.
+     * Reads text from candidate card containers, formats it, and injects updated HTML.
      */
     function processCardDescription(cardDescription) {
         const rawText = cardDescription.innerText;
@@ -183,48 +182,56 @@
 
         const normalizedText = rawText.replace(/\r/g, '').trim();
 
-        // Prevent infinitely re-processing identical text
+        // Prevent infinitely re-processing identical text or triggering loop flags
         if (cardDescription.getAttribute('data-psct-cache') === normalizedText) return;
 
         cardDescription.setAttribute('data-psct-cache', normalizedText);
 
-        // Temporarily disconnect observer to prevent mutation loops during HTML replacement
-        if (observer) observer.disconnect();
-
+        isProcessing = true;
         cardDescription.innerHTML = processText(normalizedText);
-
-        // Re-attach observer to watch for dynamic card switches
-        if (observer) {
-            observer.observe(cardDescription, {
-                childList: true,
-                characterData: true,
-                subtree: true
-            });
-        }
+        isProcessing = false;
     }
 
     /**
-     * Finds `#card-description` in the DOM and sets up a MutationObserver
-     * to automatically run the parser whenever new card details are loaded.
+     * Scans the document for any active card description container across different game modes.
      */
-    function observeCardDescription() {
-        const cardDescription = document.getElementById('card-description');
-        if (!cardDescription) {
-            setTimeout(observeCardDescription, 200); // Retry until target element renders
-            return;
-        }
+    function findAndProcessContainers() {
+        const targetSelectors = [
+            '#card-description',
+            '#engine-card-description',
+            '.card-description'
+        ];
 
-        observer = new MutationObserver(() => {
-            processCardDescription(cardDescription);
+        targetSelectors.forEach(selector => {
+            const elements = document.querySelectorAll(selector);
+            elements.forEach(element => {
+                processCardDescription(element);
+            });
+        });
+    }
+
+    /**
+     * Observes global DOM mutations to capture card description panels in active duels.
+     */
+    function setupGlobalObserver() {
+        const observer = new MutationObserver(() => {
+            if (isProcessing) return;
+            findAndProcessContainers();
         });
 
-        processCardDescription(cardDescription);
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true,
+            characterData: true
+        });
+
+        findAndProcessContainers();
     }
 
     // Initialize execution when the page DOM is ready
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', observeCardDescription);
+        document.addEventListener('DOMContentLoaded', setupGlobalObserver);
     } else {
-        observeCardDescription();
+        setupGlobalObserver();
     }
 })();
