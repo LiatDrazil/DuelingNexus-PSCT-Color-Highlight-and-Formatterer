@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DuelingNexus - PSCT Color Highlighter & Formatter
 // @namespace    https://github.com/LiatDrazil
-// @version      1.8.1
+// @version      1.9.7
 // @description  Highlights PSCT conditions/costs and automatically formats card text spacing
 // @author       LiatDrazil
 // @match        https://duelingnexus.com/duel/*
@@ -16,11 +16,16 @@
 (function () {
     'use strict';
 
+    // Color theme definition for PSCT syntax highlighting
     const PSCT_COLORS = {
         condition: '#F1FA8C', // Soft Pastel Yellow (Condition before ":")
         cost: '#FF79C6'       // Soft Pastel Pink/Magenta (Cost before ";")
     };
 
+    /**
+     * Sanitizes raw string characters to prevent unsafe HTML injection
+     * when assigning output to innerHTML.
+     */
     function escapeHTML(str) {
         return str
             .replace(/&/g, "&amp;")
@@ -28,61 +33,79 @@
             .replace(/>/g, "&gt;");
     }
 
+    /**
+     * Finds the index of a PSCT punctuation mark (':' or ';') within a string.
+     * Ignore marks contained within quote marks (e.g., card names like "Elemental HERO: Neos").
+     * Single quotes/apostrophes (e.g. "opponent's") are excluded from quote toggling.
+     */
     function findPSCTPunctuation(str, char) {
         let inQuotes = false;
+
         for (let i = 0; i < str.length; i++) {
             const current = str[i];
-            if (current === '"' || current === '“' || current === '”' || current === "'") {
+            
+            // Toggle quote state only on double/curly quotes
+            if (current === '"' || current === '“' || current === '”') {
                 inQuotes = !inQuotes;
             } else if (current === char && !inQuotes) {
-                return i;
+                return i; // Found valid PSCT separator outside of quotes
             }
         }
         return -1;
     }
 
-    function formatSentencePSCT(sentence) {
-        if (!sentence.trim()) return sentence;
+    /**
+     * Wraps conditions (before ':') and costs (before ';') in custom-colored HTML <span> tags.
+     * Evaluates order when both colon and semicolon exist in a single sentence block.
+     */
+    function highlightPSCTInBlock(text) {
+        if (!text || !text.trim()) return text;
 
-        const colonIndex = findPSCTPunctuation(sentence, ':');
-        const semicolonIndex = findPSCTPunctuation(sentence, ';');
+        const colonIndex = findPSCTPunctuation(text, ':');
+        const semicolonIndex = findPSCTPunctuation(text, ';');
 
+        // Case 1: Both Condition (:) and Cost (;) are present
         if (colonIndex !== -1 && semicolonIndex !== -1 && colonIndex < semicolonIndex) {
-            const conditionPart = sentence.substring(0, colonIndex + 1);
-            const costPart = sentence.substring(colonIndex + 1, semicolonIndex + 1);
-            const effectPart = sentence.substring(semicolonIndex + 1);
+            const conditionPart = text.substring(0, colonIndex + 1);
+            const costPart = text.substring(colonIndex + 1, semicolonIndex + 1);
+            const effectPart = text.substring(semicolonIndex + 1);
 
             return `<span style="color: ${PSCT_COLORS.condition}; font-weight: 500;">${escapeHTML(conditionPart)}</span>` +
                    `<span style="color: ${PSCT_COLORS.cost}; font-weight: 500;">${escapeHTML(costPart)}</span>` +
                    escapeHTML(effectPart);
-        }
-
-        if (colonIndex !== -1) {
-            const conditionPart = sentence.substring(0, colonIndex + 1);
-            const effectPart = sentence.substring(colonIndex + 1);
+        } 
+        // Case 2: Only Condition (:) is present
+        else if (colonIndex !== -1) {
+            const conditionPart = text.substring(0, colonIndex + 1);
+            const effectPart = text.substring(colonIndex + 1);
 
             return `<span style="color: ${PSCT_COLORS.condition}; font-weight: 500;">${escapeHTML(conditionPart)}</span>` +
                    escapeHTML(effectPart);
-        }
-
-        if (semicolonIndex !== -1) {
-            const costPart = sentence.substring(0, semicolonIndex + 1);
-            const effectPart = sentence.substring(semicolonIndex + 1);
+        } 
+        // Case 3: Only Cost (;) is present
+        else if (semicolonIndex !== -1) {
+            const costPart = text.substring(0, semicolonIndex + 1);
+            const effectPart = text.substring(semicolonIndex + 1);
 
             return `<span style="color: ${PSCT_COLORS.cost}; font-weight: 500;">${escapeHTML(costPart)}</span>` +
                    escapeHTML(effectPart);
         }
 
-        return escapeHTML(sentence);
+        // Case 4: Plain effect sentence with no PSCT markers
+        return escapeHTML(text);
     }
 
-    // Splits text into sentences, isolating (Quick Effect) blocks into new lines
+    /**
+     * Splits raw text into sentence blocks based on periods, handling parenthetical rules:
+     * - Keeps parenthetical rules (e.g., "(This is treated as an Xyz Summon.)") attached to their parent effect.
+     * - Splits immediately if the following tag is "(Quick Effect)".
+     */
     function splitIntoSentences(text) {
         const sentences = [];
         let current = "";
         let inQuotes = false;
         let parenDepth = 0;
-        let isAfterPeriodParen = false;
+        let waitingToBreakAfterParen = false;
 
         for (let i = 0; i < text.length; i++) {
             const char = text[i];
@@ -91,40 +114,30 @@
             if (char === '"' || char === '“' || char === '”') {
                 inQuotes = !inQuotes;
             } else if (char === '(' && !inQuotes) {
-                if (parenDepth === 0) {
-                    const prevText = current.substring(0, current.length - 1).trimEnd();
-                    if (prevText.endsWith('.')) {
-                        isAfterPeriodParen = true;
-                    }
-                }
                 parenDepth++;
             } else if (char === ')' && !inQuotes) {
                 if (parenDepth > 0) parenDepth--;
-
-                if (parenDepth === 0 && isAfterPeriodParen) {
-                    isAfterPeriodParen = false;
-                    if (i === text.length - 1 || text[i + 1] === ' ' || text[i + 1] === '\n') {
-                        sentences.push(current);
-                        current = "";
-                        continue;
-                    }
+                
+                // If a period triggered a deferred split for a trailing parenthesis note, break now
+                if (parenDepth === 0 && waitingToBreakAfterParen) {
+                    sentences.push(current);
+                    current = "";
+                    waitingToBreakAfterParen = false;
                 }
             } else if (char === '.' && !inQuotes && parenDepth === 0) {
                 let rest = text.substring(i + 1).trimStart();
                 
-                // If next block is (Quick Effect), force line split before it
+                // Exception: "(Quick Effect)" belongs to the next sentence block
                 if (rest.startsWith('(Quick Effect)')) {
                     sentences.push(current);
                     current = "";
                     continue;
                 }
 
-                // Standard parenthetical handling following a period
+                // If followed by an explanatory note in parentheses, wait for closing paren before splitting
                 if (rest.startsWith('(')) {
-                    continue; 
-                }
-
-                if (i === text.length - 1 || text[i + 1] === ' ' || text[i + 1] === '\n') {
+                    waitingToBreakAfterParen = true;
+                } else if (i === text.length - 1 || text[i + 1] === ' ' || text[i + 1] === '\n') {
                     sentences.push(current);
                     current = "";
                 }
@@ -135,17 +148,24 @@
         return sentences;
     }
 
+    /**
+     * Orchestrates text cleaning, sentence splitting, PSCT highlighting,
+     * and spacing layout using <br><br> tags between distinct effects.
+     */
     function processText(text) {
         if (!text) return text;
 
-        const lines = text.split('\n');
+        // Replace non-breaking spaces (\u00A0) from web elements with standard spaces
+        let cleaned = text.replace(/\u00A0/g, ' ');
+        const lines = cleaned.split('\n');
+
         const formattedBlocks = lines.map(line => {
             if (!line.trim()) return '';
             const sentences = splitIntoSentences(line);
             return sentences
-                .map(sentence => formatSentencePSCT(sentence.trim()))
-                .filter(s => s.length > 0)
-                .join('<br><br>');
+                .map(sentence => highlightPSCTInBlock(sentence))
+                .filter(s => s && s.length > 0)
+                .join('<br><br>'); // Insert double line breaks between effect sentences
         });
 
         return formattedBlocks.filter(b => b.length > 0).join('<br><br>');
@@ -153,20 +173,27 @@
 
     let observer = null;
 
+    /**
+     * Reads text from the card container, formats it, and injects the updated HTML.
+     * Uses a cache attribute to avoid redundant re-renders.
+     */
     function processCardDescription(cardDescription) {
         const rawText = cardDescription.innerText;
         if (!rawText) return;
 
         const normalizedText = rawText.replace(/\r/g, '').trim();
 
+        // Prevent infinitely re-processing identical text
         if (cardDescription.getAttribute('data-psct-cache') === normalizedText) return;
 
         cardDescription.setAttribute('data-psct-cache', normalizedText);
 
+        // Temporarily disconnect observer to prevent mutation loops during HTML replacement
         if (observer) observer.disconnect();
 
         cardDescription.innerHTML = processText(normalizedText);
 
+        // Re-attach observer to watch for dynamic card switches
         if (observer) {
             observer.observe(cardDescription, {
                 childList: true,
@@ -176,10 +203,14 @@
         }
     }
 
+    /**
+     * Finds `#card-description` in the DOM and sets up a MutationObserver
+     * to automatically run the parser whenever new card details are loaded.
+     */
     function observeCardDescription() {
         const cardDescription = document.getElementById('card-description');
         if (!cardDescription) {
-            setTimeout(observeCardDescription, 200);
+            setTimeout(observeCardDescription, 200); // Retry until target element renders
             return;
         }
 
@@ -190,6 +221,7 @@
         processCardDescription(cardDescription);
     }
 
+    // Initialize execution when the page DOM is ready
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', observeCardDescription);
     } else {
