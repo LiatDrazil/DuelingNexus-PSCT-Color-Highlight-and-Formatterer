@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         DuelingNexus - PSCT Color Highlighter & Formatter
 // @namespace    https://github.com/LiatDrazil
-// @version      1.8.0
-// @description  Highlights PSCT conditions/costs and automatically formats card text spacing with maximum performance
+// @version      1.8.1
+// @description  Highlights PSCT conditions/costs and automatically formats card text spacing
 // @author       LiatDrazil
 // @match        https://duelingnexus.com/duel/*
 // @match        https://duelingnexus.com/replay/*
@@ -111,7 +111,7 @@
                 }
             } else if (char === '.' && !inQuotes && parenDepth === 0) {
                 let rest = text.substring(i + 1).trimStart();
-
+                
                 // If next block is (Quick Effect), force line split before it
                 if (rest.startsWith('(Quick Effect)')) {
                     sentences.push(current);
@@ -121,7 +121,7 @@
 
                 // Standard parenthetical handling following a period
                 if (rest.startsWith('(')) {
-                    continue;
+                    continue; 
                 }
 
                 if (i === text.length - 1 || text[i + 1] === ' ' || text[i + 1] === '\n') {
