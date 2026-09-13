@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DuelingNexus - PSCT Color Highlighter & Formatter
 // @namespace    https://github.com/LiatDrazil
-// @version      2.9.26
+// @version      2.9.27
 // @description  Highlights PSCT conditions, costs, and summon conditions, formats card names and Quick Effects, with custom spacing controls.
 // @author       LiatDrazil
 // @match        https://duelingnexus.com/duel/*
@@ -405,6 +405,18 @@
                 <input type="checkbox" id="psct-toggle-colors" ${PSCT_SETTINGS.enableColors ? 'checked' : ''} style="cursor: pointer;">
             </div>
 
+            <!-- Summon Condition Color Control (Moved Above Condition) -->
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <input type="checkbox" id="psct-toggle-summon" ${PSCT_SETTINGS.enableSummon ? 'checked' : ''} style="cursor: pointer;" title="Toggle Summon Condition Color">
+                    <label for="psct-summon-color">Summon Condition:</label>
+                </div>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <input type="color" id="psct-summon-color" value="${PSCT_SETTINGS.summonColor}" style="cursor: pointer; border: none; background: transparent; width: 26px; height: 26px;">
+                    <button id="psct-reset-summon" title="Reset Summon Color" style="background: #44475a; color: #f8f8f2; border: 1px solid #6272a4; border-radius: 3px; width: 22px; height: 22px; font-size: 11px; cursor: pointer; display: flex; align-items: center; justify-content: center;">↺</button>
+                </div>
+            </div>
+
             <!-- Condition Color Control -->
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <div style="display: flex; align-items: center; gap: 6px;">
@@ -426,18 +438,6 @@
                 <div style="display: flex; align-items: center; gap: 6px;">
                     <input type="color" id="psct-cost-color" value="${PSCT_SETTINGS.costColor}" style="cursor: pointer; border: none; background: transparent; width: 26px; height: 26px;">
                     <button id="psct-reset-cost" title="Reset Cost Color" style="background: #44475a; color: #f8f8f2; border: 1px solid #6272a4; border-radius: 3px; width: 22px; height: 22px; font-size: 11px; cursor: pointer; display: flex; align-items: center; justify-content: center;">↺</button>
-                </div>
-            </div>
-
-            <!-- Summon Condition Color Control -->
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div style="display: flex; align-items: center; gap: 6px;">
-                    <input type="checkbox" id="psct-toggle-summon" ${PSCT_SETTINGS.enableSummon ? 'checked' : ''} style="cursor: pointer;" title="Toggle Summon Condition Color">
-                    <label for="psct-summon-color">Summon Condition:</label>
-                </div>
-                <div style="display: flex; align-items: center; gap: 6px;">
-                    <input type="color" id="psct-summon-color" value="${PSCT_SETTINGS.summonColor}" style="cursor: pointer; border: none; background: transparent; width: 26px; height: 26px;">
-                    <button id="psct-reset-summon" title="Reset Summon Color" style="background: #44475a; color: #f8f8f2; border: 1px solid #6272a4; border-radius: 3px; width: 22px; height: 22px; font-size: 11px; cursor: pointer; display: flex; align-items: center; justify-content: center;">↺</button>
                 </div>
             </div>
 
