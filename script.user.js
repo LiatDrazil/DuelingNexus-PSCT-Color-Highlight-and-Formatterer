@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         DuelingNexus - PSCT Color Highlighter & Formatter
 // @namespace    https://github.com/LiatDrazil
-// @version      2.9.27
-// @description  Highlights PSCT conditions, costs, and summon conditions, formats card names and Quick Effects, with custom spacing controls.
+// @version      2.9.37
+// @description  Highlights PSCT conditions, costs, and summon conditions, formats card names, Quick Effects, use Limits restrictions (once per turn / duel), with custom spacing controls.
 // @author       LiatDrazil
 // @match        https://duelingnexus.com/duel/*
 // @match        https://duelingnexus.com/replay/*
@@ -42,6 +42,7 @@
     const STORAGE_KEY_ENABLE_SUMMON = 'psct_enable_summon';
     const STORAGE_KEY_ENABLE_NAMES = 'psct_enable_names';
     const STORAGE_KEY_ENABLE_QUICK = 'psct_enable_quick';
+    const STORAGE_KEY_ENABLE_USE_LIMITS = 'psct_enable_use_limits';
     const STORAGE_KEY_SPACING_GAP = 'psct_spacing_gap';
     const STORAGE_KEY_GAP_ENABLED = 'psct_gap_enabled';
 
@@ -56,6 +57,7 @@
         enableSummon: localStorage.getItem(STORAGE_KEY_ENABLE_SUMMON) !== 'false',
         enableCardNames: localStorage.getItem(STORAGE_KEY_ENABLE_NAMES) !== 'false',
         enableQuickEffect: localStorage.getItem(STORAGE_KEY_ENABLE_QUICK) !== 'false',
+        enableUseLimits: localStorage.getItem(STORAGE_KEY_ENABLE_USE_LIMITS) !== 'false',
         spacingGap: parseInt(localStorage.getItem(STORAGE_KEY_SPACING_GAP) || DEFAULT_SPACING_GAP, 10),
         gapEnabled: localStorage.getItem(STORAGE_KEY_GAP_ENABLED) !== 'false'
     };
@@ -90,7 +92,7 @@
     }
 
     /**
-     * Replaces quoted text (card names) and Quick Effect mentions with appropriate styles.
+     * Replaces quoted text (card names), Quick Effect mentions, use limit conditions, and use limit clauses with appropriate styles.
      */
     function formatCardNames(text) {
         if (!text) return "";
@@ -108,6 +110,14 @@
             escaped = escaped.replace(/(\(Quick Effect\)|\bQuick Effects?\b)/gi, '<strong style="font-weight: bold;">$1</strong>');
         }
 
+        // Apply underline styling to use limit clauses (including "once per turn / duel" variants)
+        if (PSCT_SETTINGS.enableUseLimits) {
+            const useLimitsRegex = /\b(?:once|twice|(?:[\w\d]+|a\s+number\s+of)\s+times)\s+per\s+(?:turn|duel)\b/gi;
+            escaped = escaped.replace(useLimitsRegex, (match) => {
+                return `<span style="text-decoration: underline;">${match}</span>`;
+            });
+        }
+
         return escaped;
     }
 
@@ -119,11 +129,20 @@
         
         const lower = text.trim().toLowerCase();
 
-        // If it contains a semicolon (;), it is never a summon condition (activation cost)
+        // If it contains a semicolon (;), it is an activation cost, never a summon condition.
         if (text.includes(';')) return false;
 
-        // If it contains a colon (:), we only accept it if it is strictly a summon clause
-        if (text.includes(':') && !lower.includes("summon")) return false;
+        // If it contains a colon (:), check if it's an activated effect condition (e.g., "Once per turn, during your Main Phase: You can...")
+        // Summon conditions do not use a colon for activation timing/costs.
+        if (text.includes(':')) {
+            const colonIndex = findPSCTPunctuation(text, ':');
+            // If there's a colon and it precedes a typical activation setup ("you can", activation phrasing, etc.), it's an effect.
+            const textBeforeColon = lower.substring(0, colonIndex);
+            if (textBeforeColon.includes("turn") || textBeforeColon.includes("phase") || textBeforeColon.includes("ready") || textBeforeColon.includes("standby") || textBeforeColon.includes("main") || textBeforeColon.includes("end")) {
+                return false;
+            }
+            if (!lower.includes("summon")) return false;
+        }
 
         // Must contain the word "by" as a whole word to be evaluated
         const hasBy = /\bby\b/.test(lower);
@@ -179,7 +198,7 @@
     // 2. PSCT HIGHLIGHTING CORE LOGIC
     // ==========================================
     /**
-     * Wraps conditions, costs, and summon conditions in custom-colored HTML <span> tags if colors are enabled.
+     * Wraps conditions, costs, summon conditions, and full use limit sentences in custom tags.
      */
     function highlightPSCTInBlock(text) {
         if (!text || !text.trim()) return text;
@@ -189,10 +208,20 @@
             return formatSummonCondition(text);
         }
 
-        if (!PSCT_SETTINGS.enableColors) return formatCardNames(text);
-
+        // Check if this block has condition (:) or cost (;)
         const colonIndex = findPSCTPunctuation(text, ':');
         const semicolonIndex = findPSCTPunctuation(text, ';');
+        const hasConditionOrCost = (colonIndex !== -1 || semicolonIndex !== -1);
+
+        // If enabled, check for "You can only use/activate/apply ..." use limits
+        if (PSCT_SETTINGS.enableUseLimits && !hasConditionOrCost) {
+            const lower = text.toLowerCase();
+            if (/\byou\s+can\s+only\s+(?:use|activate|apply)\b/.test(lower)) {
+                return `<span style="text-decoration: underline;">${formatCardNames(text)}</span>`;
+            }
+        }
+
+        if (!PSCT_SETTINGS.enableColors) return formatCardNames(text);
 
         // Case 1: Both Condition (:) and Cost (;) are present
         if (colonIndex !== -1 && semicolonIndex !== -1 && colonIndex < semicolonIndex) {
@@ -475,6 +504,12 @@
                 <input type="checkbox" id="psct-toggle-quick" ${PSCT_SETTINGS.enableQuickEffect ? 'checked' : ''} style="cursor: pointer;">
             </div>
 
+            <!-- Enable Underline Use Limits Toggle -->
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <label for="psct-toggle-use-limits" style="text-decoration: underline;">Underline use Limits (once per turn / duel):</label>
+                <input type="checkbox" id="psct-toggle-use-limits" ${PSCT_SETTINGS.enableUseLimits ? 'checked' : ''} style="cursor: pointer;">
+            </div>
+
             <hr style="border: 0; border-top: 1px solid #44475a; margin: 2px 0;">
 
             <!-- Toggle Spacing Gap On/Off -->
@@ -527,6 +562,7 @@
 
         const toggleNames = document.getElementById('psct-toggle-names');
         const toggleQuick = document.getElementById('psct-toggle-quick');
+        const toggleUseLimits = document.getElementById('psct-toggle-use-limits');
         const toggleGap = document.getElementById('psct-toggle-gap');
         const gapInput = document.getElementById('psct-gap-input');
         const resetGapBtn = document.getElementById('psct-reset-gap');
@@ -603,6 +639,12 @@
         toggleQuick.addEventListener('change', (e) => {
             PSCT_SETTINGS.enableQuickEffect = e.target.checked;
             localStorage.setItem(STORAGE_KEY_ENABLE_QUICK, e.target.checked);
+            forceReRender();
+        });
+
+        toggleUseLimits.addEventListener('change', (e) => {
+            PSCT_SETTINGS.enableUseLimits = e.target.checked;
+            localStorage.setItem(STORAGE_KEY_ENABLE_USE_LIMITS, e.target.checked);
             forceReRender();
         });
 
