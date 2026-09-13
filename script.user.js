@@ -16,13 +16,23 @@
 (function () {
     'use strict';
 
-    // Default values
+    // ==========================================
+    // 1. DEFAULT VALUES & STORAGE KEYS SETUP
+    // ==========================================
+    
+    // Default color used for highlighting PSCT Conditions (colon syntax)
     const DEFAULT_CONDITION_COLOR = '#F1FA8C';
+    
+    // Default color used for highlighting PSCT Activation Costs (semicolon syntax)
     const DEFAULT_COST_COLOR = '#FF79C6';
-    const DEFAULT_SUMMON_COLOR = '#8BE9FD'; // Cyan style for Summon Conditions
+    
+    // Default color used for highlighting Summon Conditions (Cyan style)
+    const DEFAULT_SUMMON_COLOR = '#8BE9FD'; 
+    
+    // Default spacing gap size in pixels between processed lines/sentences
     const DEFAULT_SPACING_GAP = 10;
 
-    // Storage keys for user settings
+    // Storage keys for persisting user preferences in localStorage
     const STORAGE_KEY_CONDITION = 'psct_color_condition';
     const STORAGE_KEY_COST = 'psct_color_cost';
     const STORAGE_KEY_SUMMON = 'psct_color_summon';
@@ -35,7 +45,7 @@
     const STORAGE_KEY_SPACING_GAP = 'psct_spacing_gap';
     const STORAGE_KEY_GAP_ENABLED = 'psct_gap_enabled';
 
-    // Settings state initialized from localStorage
+    // Initialize state from localStorage or fallback to defaults
     let PSCT_SETTINGS = {
         conditionColor: localStorage.getItem(STORAGE_KEY_CONDITION) || DEFAULT_CONDITION_COLOR,
         costColor: localStorage.getItem(STORAGE_KEY_COST) || DEFAULT_COST_COLOR,
@@ -61,7 +71,8 @@
     }
 
     /**
-     * Finds the index of a PSCT punctuation mark (':' or ';') within a string.
+     * Finds the index of a PSCT punctuation mark (':' or ';') within a string,
+     * ignoring matches inside quotes to avoid false positives.
      */
     function findPSCTPunctuation(str, char) {
         let inQuotes = false;
@@ -85,12 +96,14 @@
         if (!text) return "";
         let escaped = escapeHTML(text);
 
+        // Apply italic styling to text enclosed in quotes (card names)
         if (PSCT_SETTINGS.enableCardNames) {
             escaped = escaped.replace(/(?:"|“)(.*?)(?:"|”)/g, (match, name) => {
                 return `<span style="font-style: italic;">"${name}"</span>`;
             });
         }
 
+        // Apply bold styling to Quick Effect indicators
         if (PSCT_SETTINGS.enableQuickEffect) {
             escaped = escaped.replace(/(\(Quick Effect\)|\bQuick Effects?\b)/gi, '<strong style="font-weight: bold;">$1</strong>');
         }
@@ -120,7 +133,7 @@
         let cleanedLower = lower
             .replace(/by\s+its\s+own\s+effect/g, '')
             .replace(/by\s+other\s+ways/g, '')
-            .replace(/by\s+(?:["“].*?["”])/g, '');
+            .replace(/by\s+(?:["“].*?["“])/g, '');
 
         // If after cleaning all forbidden patterns there are no more "by" words left, it's invalid
         const hasValidBy = /\bby\b/.test(cleanedLower);
@@ -154,7 +167,7 @@
     }
 
     /**
-     * Formats summon conditions.
+     * Formats summon conditions with custom color and weight.
      */
     function formatSummonCondition(text) {
         if (!PSCT_SETTINGS.enableColors || !PSCT_SETTINGS.enableSummon) return formatCardNames(text);
@@ -162,12 +175,16 @@
         return `<span style="color: ${PSCT_SETTINGS.summonColor}; font-weight: 500;">${formatCardNames(text)}</span>`;
     }
 
+    // ==========================================
+    // 2. PSCT HIGHLIGHTING CORE LOGIC
+    // ==========================================
     /**
      * Wraps conditions, costs, and summon conditions in custom-colored HTML <span> tags if colors are enabled.
      */
     function highlightPSCTInBlock(text) {
         if (!text || !text.trim()) return text;
 
+        // Check if block matches Summon Condition rules first
         if (isSummonCondition(text)) {
             return formatSummonCondition(text);
         }
@@ -268,7 +285,7 @@
     }
 
     /**
-     * Orchestrates formatting using fine-tuned line breaks.
+     * Orchestrates formatting using fine-tuned line breaks and spacing gaps.
      */
     function processText(text) {
         if (!text) return text;
@@ -310,7 +327,7 @@
     }
 
     /**
-     * Processes card container elements.
+     * Processes card container elements and caches inner text to prevent redundant processing.
      */
     function processCardDescription(cardDescription) {
         const rawText = cardDescription.innerText;
@@ -328,7 +345,7 @@
     }
 
     /**
-     * Scans for active containers.
+     * Scans for active card containers across the document.
      */
     function findAndProcessContainers() {
         const targetSelectors = [
@@ -345,8 +362,11 @@
         });
     }
 
+    // ==========================================
+    // 3. SETTINGS UI & EVENT LISTENERS
+    // ==========================================
     /**
-     * Injects the complete PSCT Settings UI with toggles and options.
+     * Injects the complete PSCT Settings UI floating panel with toggles and color pickers.
      */
     function injectPSCTSettingsUI() {
         if (document.getElementById('psct-settings-btn')) return;
@@ -405,7 +425,7 @@
                 <input type="checkbox" id="psct-toggle-colors" ${PSCT_SETTINGS.enableColors ? 'checked' : ''} style="cursor: pointer;">
             </div>
 
-            <!-- Summon Condition Color Control (Moved Above Condition) -->
+            <!-- Summon Condition Color Control -->
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <div style="display: flex; align-items: center; gap: 6px;">
                     <input type="checkbox" id="psct-toggle-summon" ${PSCT_SETTINGS.enableSummon ? 'checked' : ''} style="cursor: pointer;" title="Toggle Summon Condition Color">
@@ -486,12 +506,12 @@
         document.body.appendChild(btn);
         document.body.appendChild(panel);
 
-        // Toggle panel open/close
+        // Toggle settings panel visibility
         btn.addEventListener('click', () => {
             panel.style.display = panel.style.display === 'none' ? 'flex' : 'none';
         });
 
-        // UI Event Listeners
+        // Binding UI controls to settings updates and persistence
         const toggleColors = document.getElementById('psct-toggle-colors');
         const toggleCond = document.getElementById('psct-toggle-cond');
         const condInput = document.getElementById('psct-cond-color');
@@ -607,8 +627,11 @@
         });
     }
 
+    // ==========================================
+    // 4. MUTATION OBSERVER & INITIALIZATION
+    // ==========================================
     /**
-     * Observes global DOM changes.
+     * Sets up a global MutationObserver to continuously scan and format dynamically loaded card descriptions.
      */
     function setupGlobalObserver() {
         const observer = new MutationObserver(() => {
