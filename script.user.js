@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DuelingNexus - PSCT Color Highlighter & Formatter
 // @namespace    https://github.com/LiatDrazil
-// @version      2.9.38
+// @version      2.9.39
 // @description  Highlights PSCT conditions, costs, and summon conditions, formats card names, Quick Effects, use Limits restrictions (once per turn / duel), with custom spacing controls.
 // @author       LiatDrazil
 // @match        https://duelingnexus.com/duel/*
@@ -160,7 +160,6 @@
         // Summon conditions do not use a colon for activation timing/costs.
         if (text.includes(':')) {
             const colonIndex = findPSCTPunctuation(text, ':');
-            // If there's a colon and it precedes a typical activation setup ("you can", activation phrasing, etc.), it's an effect.
             const textBeforeColon = lower.substring(0, colonIndex);
             const activationKeywords = ["turn", "phase", "ready", "standby", "main"];
             if (activationKeywords.some(keyword => textBeforeColon.includes(keyword))) {
@@ -579,7 +578,7 @@
         bindings.condition.addEventListener('change', (e) => {
             PSCT_SETTINGS.enableCondition = e.target.checked;
             localStorage.setItem(STORAGE_KEYS.enableCondition, e.target.checked);
-            forceReReRender();
+            forceReRender();
         });
 
         bindings.conditionColor.addEventListener('input', (e) => {
@@ -727,62 +726,48 @@
             gap: 12px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.5);
             font-family: sans-serif;
-            font-size: 13px;
-            min-width: 290px;
-            max-height: 80vh;
-            overflow-y: auto;
+            font-size: 12px;
+            min-width: 280px;
         `;
-
         panel.innerHTML = getSettingsUIHTML();
+
+        btn.addEventListener('click', () => {
+            panel.style.display = panel.style.display === 'flex' ? 'none' : 'flex';
+        });
 
         document.body.appendChild(btn);
         document.body.appendChild(panel);
 
-        // Toggle settings panel visibility
-        btn.addEventListener('click', () => {
-            panel.style.display = panel.style.display === 'none' ? 'flex' : 'none';
-        });
-
-        // Close panel on Escape key
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && panel.style.display !== 'none') {
-                panel.style.display = 'none';
-            }
-        });
-
-        // Attach event listeners to all controls
         const bindings = createEventListenerBindings(panel);
         attachEventListeners(bindings);
     }
 
     // ==========================================
-    // 4. MUTATION OBSERVER & INITIALIZATION
+    // 4. INITIALIZATION & MUTATION OBSERVER
     // ==========================================
-    /**
-     * Sets up a global MutationObserver to continuously scan and format dynamically loaded card descriptions.
-     */
-    function setupGlobalObserver() {
+    function init() {
+        injectPSCTSettingsUI();
+        findAndProcessContainers();
+
         const observer = new MutationObserver(() => {
             if (isProcessing) return;
             
-            findAndProcessContainers();
-            injectPSCTSettingsUI();
+            clearTimeout(processingTimer);
+            processingTimer = setTimeout(() => {
+                findAndProcessContainers();
+            }, 250);
         });
 
         observer.observe(document.body, {
             childList: true,
-            subtree: true,
-            characterData: true
+            subtree: true
         });
-
-        findAndProcessContainers();
-        injectPSCTSettingsUI();
     }
 
-    // Initialize execution when the page DOM is ready
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', setupGlobalObserver);
+        document.addEventListener('DOMContentLoaded', init);
     } else {
-        setupGlobalObserver();
+        init();
     }
+
 })();
