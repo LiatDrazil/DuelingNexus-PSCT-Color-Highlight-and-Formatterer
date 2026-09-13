@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DuelingNexus - PSCT Color Highlighter & Formatter
 // @namespace    https://github.com/LiatDrazil
-// @version      2.9.38
+// @version      2.9.39
 // @description  Highlights PSCT conditions, costs, and summon conditions, formats card names, Quick Effects, use Limits restrictions (once per turn / duel), with custom spacing controls.
 // @author       LiatDrazil
 // @match        https://duelingnexus.com/duel/*
@@ -75,7 +75,6 @@
     };
 
     let isProcessing = false;
-    let processingTimer = null;
 
     /**
      * Validates if a string is a valid hex color.
@@ -147,27 +146,15 @@
 
     /**
      * Checks if a sentence represents or contains a Summon Condition.
+     * Garantido: Condições de invocação NUNCA devem conter dois-pontos (:) ou ponto-e-vírgula (;).
      */
     function isSummonCondition(text) {
         if (!text) return false;
         
+        // Condições de invocação reais nunca contêm ':' (condição de ativação) ou ';' (custo)
+        if (text.includes(':') || text.includes(';')) return false;
+
         const lower = text.trim().toLowerCase();
-
-        // If it contains a semicolon (;), it is an activation cost, never a summon condition.
-        if (text.includes(';')) return false;
-
-        // If it contains a colon (:), check if it's an activated effect condition (e.g., "Once per turn, during your Main Phase: You can...")
-        // Summon conditions do not use a colon for activation timing/costs.
-        if (text.includes(':')) {
-            const colonIndex = findPSCTPunctuation(text, ':');
-            // If there's a colon and it precedes a typical activation setup ("you can", activation phrasing, etc.), it's an effect.
-            const textBeforeColon = lower.substring(0, colonIndex);
-            const activationKeywords = ["turn", "phase", "ready", "standby", "main"];
-            if (activationKeywords.some(keyword => textBeforeColon.includes(keyword))) {
-                return false;
-            }
-            if (!lower.includes("summon")) return false;
-        }
 
         // Must contain the word "by" as a whole word to be evaluated
         const hasBy = /\bby\b/.test(lower);
@@ -228,7 +215,7 @@
     function highlightPSCTInBlock(text) {
         if (!text || !text.trim()) return text;
 
-        // Check if block matches Summon Condition rules first
+        // Check if block matches Summon Condition rules first (agora rigidamente sem : ou ;)
         if (isSummonCondition(text)) {
             return formatSummonCondition(text);
         }
@@ -440,9 +427,6 @@
     // 3. SETTINGS UI & EVENT LISTENERS
     // ==========================================
 
-    /**
-     * Build the settings UI HTML template.
-     */
     function getSettingsUIHTML() {
         return `
             <div style="font-weight: bold; border-bottom: 1px solid #6272a4; padding-bottom: 5px;">
@@ -540,10 +524,7 @@
         `;
     }
 
-    /**
-     * Creates and returns event listener binding configuration.
-     */
-    function createEventListenerBindings(panel) {
+    function createEventListenerBindings() {
         return {
             colors: document.getElementById('psct-toggle-colors'),
             condition: document.getElementById('psct-toggle-cond'),
@@ -564,22 +545,17 @@
         };
     }
 
-    /**
-     * Registers event listeners for all UI controls.
-     */
     function attachEventListeners(bindings) {
-        // Master colors toggle
         bindings.colors.addEventListener('change', (e) => {
             PSCT_SETTINGS.enableColors = e.target.checked;
             localStorage.setItem(STORAGE_KEYS.enableColors, e.target.checked);
             forceReRender();
         });
 
-        // Condition controls
         bindings.condition.addEventListener('change', (e) => {
             PSCT_SETTINGS.enableCondition = e.target.checked;
             localStorage.setItem(STORAGE_KEYS.enableCondition, e.target.checked);
-            forceReReRender();
+            forceReRender();
         });
 
         bindings.conditionColor.addEventListener('input', (e) => {
@@ -597,7 +573,6 @@
             forceReRender();
         });
 
-        // Cost controls
         bindings.cost.addEventListener('change', (e) => {
             PSCT_SETTINGS.enableCost = e.target.checked;
             localStorage.setItem(STORAGE_KEYS.enableCost, e.target.checked);
@@ -619,7 +594,6 @@
             forceReRender();
         });
 
-        // Summon controls
         bindings.summon.addEventListener('change', (e) => {
             PSCT_SETTINGS.enableSummon = e.target.checked;
             localStorage.setItem(STORAGE_KEYS.enableSummon, e.target.checked);
@@ -641,7 +615,6 @@
             forceReRender();
         });
 
-        // Formatting options
         bindings.names.addEventListener('change', (e) => {
             PSCT_SETTINGS.enableCardNames = e.target.checked;
             localStorage.setItem(STORAGE_KEYS.enableNames, e.target.checked);
@@ -660,7 +633,6 @@
             forceReRender();
         });
 
-        // Gap controls
         bindings.gap.addEventListener('change', (e) => {
             PSCT_SETTINGS.gapEnabled = e.target.checked;
             localStorage.setItem(STORAGE_KEYS.gapEnabled, e.target.checked);
@@ -682,9 +654,6 @@
         });
     }
 
-    /**
-     * Injects the complete PSCT Settings UI floating panel with toggles and color pickers.
-     */
     function injectPSCTSettingsUI() {
         if (document.getElementById('psct-settings-btn')) return;
 
@@ -738,29 +707,23 @@
         document.body.appendChild(btn);
         document.body.appendChild(panel);
 
-        // Toggle settings panel visibility
         btn.addEventListener('click', () => {
             panel.style.display = panel.style.display === 'none' ? 'flex' : 'none';
         });
 
-        // Close panel on Escape key
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && panel.style.display !== 'none') {
                 panel.style.display = 'none';
             }
         });
 
-        // Attach event listeners to all controls
-        const bindings = createEventListenerBindings(panel);
+        const bindings = createEventListenerBindings();
         attachEventListeners(bindings);
     }
 
     // ==========================================
     // 4. MUTATION OBSERVER & INITIALIZATION
     // ==========================================
-    /**
-     * Sets up a global MutationObserver to continuously scan and format dynamically loaded card descriptions.
-     */
     function setupGlobalObserver() {
         const observer = new MutationObserver(() => {
             if (isProcessing) return;
@@ -779,7 +742,6 @@
         injectPSCTSettingsUI();
     }
 
-    // Initialize execution when the page DOM is ready
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', setupGlobalObserver);
     } else {
