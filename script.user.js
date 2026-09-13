@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DuelingNexus - PSCT Color Highlighter & Formatter
 // @namespace    https://github.com/LiatDrazil
-// @version      2.9.37
+// @version      2.9.38
 // @description  Highlights PSCT conditions, costs, and summon conditions, formats card names, Quick Effects, use Limits restrictions (once per turn / duel), with custom spacing controls.
 // @author       LiatDrazil
 // @match        https://duelingnexus.com/duel/*
@@ -33,34 +33,58 @@
     const DEFAULT_SPACING_GAP = 10;
 
     // Storage keys for persisting user preferences in localStorage
-    const STORAGE_KEY_CONDITION = 'psct_color_condition';
-    const STORAGE_KEY_COST = 'psct_color_cost';
-    const STORAGE_KEY_SUMMON = 'psct_color_summon';
-    const STORAGE_KEY_ENABLE_COLORS = 'psct_enable_colors';
-    const STORAGE_KEY_ENABLE_CONDITION = 'psct_enable_condition';
-    const STORAGE_KEY_ENABLE_COST = 'psct_enable_cost';
-    const STORAGE_KEY_ENABLE_SUMMON = 'psct_enable_summon';
-    const STORAGE_KEY_ENABLE_NAMES = 'psct_enable_names';
-    const STORAGE_KEY_ENABLE_QUICK = 'psct_enable_quick';
-    const STORAGE_KEY_ENABLE_USE_LIMITS = 'psct_enable_use_limits';
-    const STORAGE_KEY_SPACING_GAP = 'psct_spacing_gap';
-    const STORAGE_KEY_GAP_ENABLED = 'psct_gap_enabled';
+    const STORAGE_KEYS = {
+        condition: 'psct_color_condition',
+        cost: 'psct_color_cost',
+        summon: 'psct_color_summon',
+        enableColors: 'psct_enable_colors',
+        enableCondition: 'psct_enable_condition',
+        enableCost: 'psct_enable_cost',
+        enableSummon: 'psct_enable_summon',
+        enableNames: 'psct_enable_names',
+        enableQuick: 'psct_enable_quick',
+        enableUseLimits: 'psct_enable_use_limits',
+        spacingGap: 'psct_spacing_gap',
+        gapEnabled: 'psct_gap_enabled'
+    };
+
+    // Target selectors for card description containers (constant, reused)
+    const CARD_DESCRIPTION_SELECTORS = [
+        '#card-description',
+        '#engine-card-description',
+        '.card-description'
+    ];
+
+    // Quote character set for consistent handling
+    const QUOTE_CHARS = ['"', '"', '"'];
 
     // Initialize state from localStorage or fallback to defaults
     let PSCT_SETTINGS = {
-        conditionColor: localStorage.getItem(STORAGE_KEY_CONDITION) || DEFAULT_CONDITION_COLOR,
-        costColor: localStorage.getItem(STORAGE_KEY_COST) || DEFAULT_COST_COLOR,
-        summonColor: localStorage.getItem(STORAGE_KEY_SUMMON) || DEFAULT_SUMMON_COLOR,
-        enableColors: localStorage.getItem(STORAGE_KEY_ENABLE_COLORS) !== 'false',
-        enableCondition: localStorage.getItem(STORAGE_KEY_ENABLE_CONDITION) !== 'false',
-        enableCost: localStorage.getItem(STORAGE_KEY_ENABLE_COST) !== 'false',
-        enableSummon: localStorage.getItem(STORAGE_KEY_ENABLE_SUMMON) !== 'false',
-        enableCardNames: localStorage.getItem(STORAGE_KEY_ENABLE_NAMES) !== 'false',
-        enableQuickEffect: localStorage.getItem(STORAGE_KEY_ENABLE_QUICK) !== 'false',
-        enableUseLimits: localStorage.getItem(STORAGE_KEY_ENABLE_USE_LIMITS) !== 'false',
-        spacingGap: parseInt(localStorage.getItem(STORAGE_KEY_SPACING_GAP) || DEFAULT_SPACING_GAP, 10),
-        gapEnabled: localStorage.getItem(STORAGE_KEY_GAP_ENABLED) !== 'false'
+        conditionColor: localStorage.getItem(STORAGE_KEYS.condition) || DEFAULT_CONDITION_COLOR,
+        costColor: localStorage.getItem(STORAGE_KEYS.cost) || DEFAULT_COST_COLOR,
+        summonColor: localStorage.getItem(STORAGE_KEYS.summon) || DEFAULT_SUMMON_COLOR,
+        enableColors: localStorage.getItem(STORAGE_KEYS.enableColors) !== 'false',
+        enableCondition: localStorage.getItem(STORAGE_KEYS.enableCondition) !== 'false',
+        enableCost: localStorage.getItem(STORAGE_KEYS.enableCost) !== 'false',
+        enableSummon: localStorage.getItem(STORAGE_KEYS.enableSummon) !== 'false',
+        enableCardNames: localStorage.getItem(STORAGE_KEYS.enableNames) !== 'false',
+        enableQuickEffect: localStorage.getItem(STORAGE_KEYS.enableQuick) !== 'false',
+        enableUseLimits: localStorage.getItem(STORAGE_KEYS.enableUseLimits) !== 'false',
+        spacingGap: parseInt(localStorage.getItem(STORAGE_KEYS.spacingGap) || DEFAULT_SPACING_GAP, 10),
+        gapEnabled: localStorage.getItem(STORAGE_KEYS.gapEnabled) !== 'false'
     };
+
+    let isProcessing = false;
+    let processingTimer = null;
+
+    /**
+     * Validates if a string is a valid hex color.
+     */
+    function isValidColor(color) {
+        const style = new Option().style;
+        style.color = color;
+        return style.color !== '';
+    }
 
     /**
      * Sanitizes raw string characters to prevent unsafe HTML injection.
@@ -82,7 +106,7 @@
         for (let i = 0; i < str.length; i++) {
             const current = str[i];
             
-            if (current === '"' || current === '“' || current === '”') {
+            if (QUOTE_CHARS.includes(current)) {
                 inQuotes = !inQuotes;
             } else if (current === char && !inQuotes) {
                 return i;
@@ -100,7 +124,7 @@
 
         // Apply italic styling to text enclosed in quotes (card names)
         if (PSCT_SETTINGS.enableCardNames) {
-            escaped = escaped.replace(/(?:"|“)(.*?)(?:"|”)/g, (match, name) => {
+            escaped = escaped.replace(/(?:"|"|")(.*?)(?:"|"|")/g, (match, name) => {
                 return `<span style="font-style: italic;">"${name}"</span>`;
             });
         }
@@ -112,7 +136,7 @@
 
         // Apply underline styling to use limit clauses (including "once per turn / duel" variants)
         if (PSCT_SETTINGS.enableUseLimits) {
-            const useLimitsRegex = /\b(?:once|twice|(?:[\w\d]+|a\s+number\s+of)\s+times)\s+per\s+(?:turn|duel)\b/gi;
+            const useLimitsRegex = /\b(?:once|twice|thrice|(?:[\w\d]+|a\s+number\s+of)\s+times?)\s+per\s+(?:turn|duel|phase)\b/gi;
             escaped = escaped.replace(useLimitsRegex, (match) => {
                 return `<span style="text-decoration: underline;">${match}</span>`;
             });
@@ -138,7 +162,8 @@
             const colonIndex = findPSCTPunctuation(text, ':');
             // If there's a colon and it precedes a typical activation setup ("you can", activation phrasing, etc.), it's an effect.
             const textBeforeColon = lower.substring(0, colonIndex);
-            if (textBeforeColon.includes("turn") || textBeforeColon.includes("phase") || textBeforeColon.includes("ready") || textBeforeColon.includes("standby") || textBeforeColon.includes("main") || textBeforeColon.includes("end")) {
+            const activationKeywords = ["turn", "phase", "ready", "standby", "main"];
+            if (activationKeywords.some(keyword => textBeforeColon.includes(keyword))) {
                 return false;
             }
             if (!lower.includes("summon")) return false;
@@ -152,7 +177,7 @@
         let cleanedLower = lower
             .replace(/by\s+its\s+own\s+effect/g, '')
             .replace(/by\s+other\s+ways/g, '')
-            .replace(/by\s+(?:["“].*?["“])/g, '');
+            .replace(/by\s+(?:[""].*?[""])/g, '');
 
         // If after cleaning all forbidden patterns there are no more "by" words left, it's invalid
         const hasValidBy = /\bby\b/.test(cleanedLower);
@@ -279,7 +304,7 @@
             const char = text[i];
             current += char;
 
-            if (char === '"' || char === '“' || char === '”') {
+            if (QUOTE_CHARS.includes(char)) {
                 inQuotes = !inQuotes;
             } else if (char === '(' && !inQuotes) {
                 parenDepth++;
@@ -339,14 +364,31 @@
         return processedLines.filter(b => b.length > 0).join(customSpacer);
     }
 
-    let isProcessing = false;
+    /**
+     * Creates a cache key combining normalized text and settings hash.
+     */
+    function getSettingsHash() {
+        return JSON.stringify({
+            enableColors: PSCT_SETTINGS.enableColors,
+            enableCondition: PSCT_SETTINGS.enableCondition,
+            enableCost: PSCT_SETTINGS.enableCost,
+            enableSummon: PSCT_SETTINGS.enableSummon,
+            enableCardNames: PSCT_SETTINGS.enableCardNames,
+            enableQuickEffect: PSCT_SETTINGS.enableQuickEffect,
+            enableUseLimits: PSCT_SETTINGS.enableUseLimits,
+            gapEnabled: PSCT_SETTINGS.gapEnabled,
+            spacingGap: PSCT_SETTINGS.spacingGap,
+            conditionColor: PSCT_SETTINGS.conditionColor,
+            costColor: PSCT_SETTINGS.costColor,
+            summonColor: PSCT_SETTINGS.summonColor
+        });
+    }
 
     /**
      * Clears cache attributes to force immediate UI re-render on settings change.
      */
     function forceReRender() {
-        const targetSelectors = ['#card-description', '#engine-card-description', '.card-description'];
-        targetSelectors.forEach(selector => {
+        CARD_DESCRIPTION_SELECTORS.forEach(selector => {
             const elements = document.querySelectorAll(selector);
             elements.forEach(element => {
                 element.removeAttribute('data-psct-cache');
@@ -356,34 +398,37 @@
     }
 
     /**
-     * Processes card container elements and caches inner text to prevent redundant processing.
+     * Processes card container elements and caches inner text and settings to prevent redundant processing.
      */
     function processCardDescription(cardDescription) {
+        if (!cardDescription) return;
+
         const rawText = cardDescription.innerText;
         if (!rawText) return;
 
         const normalizedText = rawText.replace(/\r/g, '').trim();
+        const settingsHash = getSettingsHash();
+        const combinedCache = `${normalizedText}|${settingsHash}`;
 
-        if (cardDescription.getAttribute('data-psct-cache') === normalizedText) return;
+        if (cardDescription.getAttribute('data-psct-cache') === combinedCache) return;
 
-        cardDescription.setAttribute('data-psct-cache', normalizedText);
+        cardDescription.setAttribute('data-psct-cache', combinedCache);
 
         isProcessing = true;
-        cardDescription.innerHTML = processText(normalizedText);
-        isProcessing = false;
+        try {
+            cardDescription.innerHTML = processText(normalizedText);
+        } catch (error) {
+            console.error('Error processing card description:', error);
+        } finally {
+            isProcessing = false;
+        }
     }
 
     /**
      * Scans for active card containers across the document.
      */
     function findAndProcessContainers() {
-        const targetSelectors = [
-            '#card-description',
-            '#engine-card-description',
-            '.card-description'
-        ];
-
-        targetSelectors.forEach(selector => {
+        CARD_DESCRIPTION_SELECTORS.forEach(selector => {
             const elements = document.querySelectorAll(selector);
             elements.forEach(element => {
                 processCardDescription(element);
@@ -394,56 +439,12 @@
     // ==========================================
     // 3. SETTINGS UI & EVENT LISTENERS
     // ==========================================
+
     /**
-     * Injects the complete PSCT Settings UI floating panel with toggles and color pickers.
+     * Build the settings UI HTML template.
      */
-    function injectPSCTSettingsUI() {
-        if (document.getElementById('psct-settings-btn')) return;
-
-        const btn = document.createElement('button');
-        btn.id = 'psct-settings-btn';
-        btn.innerText = '⚙️ PSCT Settings';
-        btn.style.cssText = `
-            position: fixed;
-            bottom: 15px;
-            right: 15px;
-            z-index: 99999;
-            background: #282a36;
-            color: #f8f8f2;
-            border: 1px solid #6272a4;
-            border-radius: 6px;
-            padding: 8px 12px;
-            font-size: 13px;
-            font-weight: bold;
-            cursor: pointer;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-            transition: background 0.2s;
-        `;
-        btn.onmouseover = () => btn.style.background = '#44475a';
-        btn.onmouseout = () => btn.style.background = '#282a36';
-
-        const panel = document.createElement('div');
-        panel.id = 'psct-settings-panel';
-        panel.style.cssText = `
-            position: fixed;
-            bottom: 55px;
-            right: 15px;
-            z-index: 99999;
-            background: #282a36;
-            color: #f8f8f2;
-            border: 1px solid #6272a4;
-            border-radius: 8px;
-            padding: 15px;
-            display: none;
-            flex-direction: column;
-            gap: 12px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-            font-family: sans-serif;
-            font-size: 13px;
-            min-width: 290px;
-        `;
-
-        panel.innerHTML = `
+    function getSettingsUIHTML() {
+        return `
             <div style="font-weight: bold; border-bottom: 1px solid #6272a4; padding-bottom: 5px;">
                 PSCT Format & Colors
             </div>
@@ -462,7 +463,7 @@
                 </div>
                 <div style="display: flex; align-items: center; gap: 6px;">
                     <input type="color" id="psct-summon-color" value="${PSCT_SETTINGS.summonColor}" style="cursor: pointer; border: none; background: transparent; width: 26px; height: 26px;">
-                    <button id="psct-reset-summon" title="Reset Summon Color" style="background: #44475a; color: #f8f8f2; border: 1px solid #6272a4; border-radius: 3px; width: 22px; height: 22px; font-size: 11px; cursor: pointer; display: flex; align-items: center; justify-content: center;">↺</button>
+                    <button id="psct-reset-summon" title="Reset Summon Color" style="background: #44475a; color: #f8f8f2; border: 1px solid #6272a4; border-radius: 3px; width: 22px; height: 22px; font-size: 10px; cursor: pointer; padding: 0; display: flex; align-items: center; justify-content: center;">↺</button>
                 </div>
             </div>
 
@@ -474,7 +475,7 @@
                 </div>
                 <div style="display: flex; align-items: center; gap: 6px;">
                     <input type="color" id="psct-cond-color" value="${PSCT_SETTINGS.conditionColor}" style="cursor: pointer; border: none; background: transparent; width: 26px; height: 26px;">
-                    <button id="psct-reset-cond" title="Reset Condition Color" style="background: #44475a; color: #f8f8f2; border: 1px solid #6272a4; border-radius: 3px; width: 22px; height: 22px; font-size: 11px; cursor: pointer; display: flex; align-items: center; justify-content: center;">↺</button>
+                    <button id="psct-reset-cond" title="Reset Condition Color" style="background: #44475a; color: #f8f8f2; border: 1px solid #6272a4; border-radius: 3px; width: 22px; height: 22px; font-size: 10px; cursor: pointer; padding: 0; display: flex; align-items: center; justify-content: center;">↺</button>
                 </div>
             </div>
 
@@ -486,7 +487,7 @@
                 </div>
                 <div style="display: flex; align-items: center; gap: 6px;">
                     <input type="color" id="psct-cost-color" value="${PSCT_SETTINGS.costColor}" style="cursor: pointer; border: none; background: transparent; width: 26px; height: 26px;">
-                    <button id="psct-reset-cost" title="Reset Cost Color" style="background: #44475a; color: #f8f8f2; border: 1px solid #6272a4; border-radius: 3px; width: 22px; height: 22px; font-size: 11px; cursor: pointer; display: flex; align-items: center; justify-content: center;">↺</button>
+                    <button id="psct-reset-cost" title="Reset Cost Color" style="background: #44475a; color: #f8f8f2; border: 1px solid #6272a4; border-radius: 3px; width: 22px; height: 22px; font-size: 10px; cursor: pointer; padding: 0; display: flex; align-items: center; justify-content: center;">↺</button>
                 </div>
             </div>
 
@@ -537,6 +538,202 @@
                 ">↺ Reset Gap to Default</button>
             </div>
         `;
+    }
+
+    /**
+     * Creates and returns event listener binding configuration.
+     */
+    function createEventListenerBindings(panel) {
+        return {
+            colors: document.getElementById('psct-toggle-colors'),
+            condition: document.getElementById('psct-toggle-cond'),
+            conditionColor: document.getElementById('psct-cond-color'),
+            conditionReset: document.getElementById('psct-reset-cond'),
+            cost: document.getElementById('psct-toggle-cost'),
+            costColor: document.getElementById('psct-cost-color'),
+            costReset: document.getElementById('psct-reset-cost'),
+            summon: document.getElementById('psct-toggle-summon'),
+            summonColor: document.getElementById('psct-summon-color'),
+            summonReset: document.getElementById('psct-reset-summon'),
+            names: document.getElementById('psct-toggle-names'),
+            quick: document.getElementById('psct-toggle-quick'),
+            useLimits: document.getElementById('psct-toggle-use-limits'),
+            gap: document.getElementById('psct-toggle-gap'),
+            gapInput: document.getElementById('psct-gap-input'),
+            gapReset: document.getElementById('psct-reset-gap')
+        };
+    }
+
+    /**
+     * Registers event listeners for all UI controls.
+     */
+    function attachEventListeners(bindings) {
+        // Master colors toggle
+        bindings.colors.addEventListener('change', (e) => {
+            PSCT_SETTINGS.enableColors = e.target.checked;
+            localStorage.setItem(STORAGE_KEYS.enableColors, e.target.checked);
+            forceReRender();
+        });
+
+        // Condition controls
+        bindings.condition.addEventListener('change', (e) => {
+            PSCT_SETTINGS.enableCondition = e.target.checked;
+            localStorage.setItem(STORAGE_KEYS.enableCondition, e.target.checked);
+            forceReRender();
+        });
+
+        bindings.conditionColor.addEventListener('input', (e) => {
+            if (isValidColor(e.target.value)) {
+                PSCT_SETTINGS.conditionColor = e.target.value;
+                localStorage.setItem(STORAGE_KEYS.condition, e.target.value);
+                forceReRender();
+            }
+        });
+
+        bindings.conditionReset.addEventListener('click', () => {
+            PSCT_SETTINGS.conditionColor = DEFAULT_CONDITION_COLOR;
+            localStorage.setItem(STORAGE_KEYS.condition, DEFAULT_CONDITION_COLOR);
+            bindings.conditionColor.value = DEFAULT_CONDITION_COLOR;
+            forceReRender();
+        });
+
+        // Cost controls
+        bindings.cost.addEventListener('change', (e) => {
+            PSCT_SETTINGS.enableCost = e.target.checked;
+            localStorage.setItem(STORAGE_KEYS.enableCost, e.target.checked);
+            forceReRender();
+        });
+
+        bindings.costColor.addEventListener('input', (e) => {
+            if (isValidColor(e.target.value)) {
+                PSCT_SETTINGS.costColor = e.target.value;
+                localStorage.setItem(STORAGE_KEYS.cost, e.target.value);
+                forceReRender();
+            }
+        });
+
+        bindings.costReset.addEventListener('click', () => {
+            PSCT_SETTINGS.costColor = DEFAULT_COST_COLOR;
+            localStorage.setItem(STORAGE_KEYS.cost, DEFAULT_COST_COLOR);
+            bindings.costColor.value = DEFAULT_COST_COLOR;
+            forceReRender();
+        });
+
+        // Summon controls
+        bindings.summon.addEventListener('change', (e) => {
+            PSCT_SETTINGS.enableSummon = e.target.checked;
+            localStorage.setItem(STORAGE_KEYS.enableSummon, e.target.checked);
+            forceReRender();
+        });
+
+        bindings.summonColor.addEventListener('input', (e) => {
+            if (isValidColor(e.target.value)) {
+                PSCT_SETTINGS.summonColor = e.target.value;
+                localStorage.setItem(STORAGE_KEYS.summon, e.target.value);
+                forceReRender();
+            }
+        });
+
+        bindings.summonReset.addEventListener('click', () => {
+            PSCT_SETTINGS.summonColor = DEFAULT_SUMMON_COLOR;
+            localStorage.setItem(STORAGE_KEYS.summon, DEFAULT_SUMMON_COLOR);
+            bindings.summonColor.value = DEFAULT_SUMMON_COLOR;
+            forceReRender();
+        });
+
+        // Formatting options
+        bindings.names.addEventListener('change', (e) => {
+            PSCT_SETTINGS.enableCardNames = e.target.checked;
+            localStorage.setItem(STORAGE_KEYS.enableNames, e.target.checked);
+            forceReRender();
+        });
+
+        bindings.quick.addEventListener('change', (e) => {
+            PSCT_SETTINGS.enableQuickEffect = e.target.checked;
+            localStorage.setItem(STORAGE_KEYS.enableQuick, e.target.checked);
+            forceReRender();
+        });
+
+        bindings.useLimits.addEventListener('change', (e) => {
+            PSCT_SETTINGS.enableUseLimits = e.target.checked;
+            localStorage.setItem(STORAGE_KEYS.enableUseLimits, e.target.checked);
+            forceReRender();
+        });
+
+        // Gap controls
+        bindings.gap.addEventListener('change', (e) => {
+            PSCT_SETTINGS.gapEnabled = e.target.checked;
+            localStorage.setItem(STORAGE_KEYS.gapEnabled, e.target.checked);
+            forceReRender();
+        });
+
+        bindings.gapInput.addEventListener('input', (e) => {
+            const val = Math.max(0, Math.min(50, parseInt(e.target.value, 10) || 0));
+            PSCT_SETTINGS.spacingGap = val;
+            localStorage.setItem(STORAGE_KEYS.spacingGap, val);
+            forceReRender();
+        });
+
+        bindings.gapReset.addEventListener('click', () => {
+            PSCT_SETTINGS.spacingGap = DEFAULT_SPACING_GAP;
+            localStorage.setItem(STORAGE_KEYS.spacingGap, DEFAULT_SPACING_GAP);
+            bindings.gapInput.value = DEFAULT_SPACING_GAP;
+            forceReRender();
+        });
+    }
+
+    /**
+     * Injects the complete PSCT Settings UI floating panel with toggles and color pickers.
+     */
+    function injectPSCTSettingsUI() {
+        if (document.getElementById('psct-settings-btn')) return;
+
+        const btn = document.createElement('button');
+        btn.id = 'psct-settings-btn';
+        btn.innerText = '⚙️ PSCT Settings';
+        btn.style.cssText = `
+            position: fixed;
+            bottom: 15px;
+            right: 15px;
+            z-index: 99999;
+            background: #282a36;
+            color: #f8f8f2;
+            border: 1px solid #6272a4;
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-size: 13px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            transition: background 0.2s;
+        `;
+        btn.onmouseover = () => btn.style.background = '#44475a';
+        btn.onmouseout = () => btn.style.background = '#282a36';
+
+        const panel = document.createElement('div');
+        panel.id = 'psct-settings-panel';
+        panel.style.cssText = `
+            position: fixed;
+            bottom: 55px;
+            right: 15px;
+            z-index: 99999;
+            background: #282a36;
+            color: #f8f8f2;
+            border: 1px solid #6272a4;
+            border-radius: 8px;
+            padding: 15px;
+            display: none;
+            flex-direction: column;
+            gap: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            font-family: sans-serif;
+            font-size: 13px;
+            min-width: 290px;
+            max-height: 80vh;
+            overflow-y: auto;
+        `;
+
+        panel.innerHTML = getSettingsUIHTML();
 
         document.body.appendChild(btn);
         document.body.appendChild(panel);
@@ -546,127 +743,16 @@
             panel.style.display = panel.style.display === 'none' ? 'flex' : 'none';
         });
 
-        // Binding UI controls to settings updates and persistence
-        const toggleColors = document.getElementById('psct-toggle-colors');
-        const toggleCond = document.getElementById('psct-toggle-cond');
-        const condInput = document.getElementById('psct-cond-color');
-        const resetCondBtn = document.getElementById('psct-reset-cond');
-
-        const toggleCost = document.getElementById('psct-toggle-cost');
-        const costInput = document.getElementById('psct-cost-color');
-        const resetCostBtn = document.getElementById('psct-reset-cost');
-
-        const toggleSummon = document.getElementById('psct-toggle-summon');
-        const summonInput = document.getElementById('psct-summon-color');
-        const resetSummonBtn = document.getElementById('psct-reset-summon');
-
-        const toggleNames = document.getElementById('psct-toggle-names');
-        const toggleQuick = document.getElementById('psct-toggle-quick');
-        const toggleUseLimits = document.getElementById('psct-toggle-use-limits');
-        const toggleGap = document.getElementById('psct-toggle-gap');
-        const gapInput = document.getElementById('psct-gap-input');
-        const resetGapBtn = document.getElementById('psct-reset-gap');
-
-        toggleColors.addEventListener('change', (e) => {
-            PSCT_SETTINGS.enableColors = e.target.checked;
-            localStorage.setItem(STORAGE_KEY_ENABLE_COLORS, e.target.checked);
-            forceReRender();
+        // Close panel on Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && panel.style.display !== 'none') {
+                panel.style.display = 'none';
+            }
         });
 
-        toggleCond.addEventListener('change', (e) => {
-            PSCT_SETTINGS.enableCondition = e.target.checked;
-            localStorage.setItem(STORAGE_KEY_ENABLE_CONDITION, e.target.checked);
-            forceReRender();
-        });
-
-        condInput.addEventListener('input', (e) => {
-            PSCT_SETTINGS.conditionColor = e.target.value;
-            localStorage.setItem(STORAGE_KEY_CONDITION, e.target.value);
-            forceReRender();
-        });
-
-        resetCondBtn.addEventListener('click', () => {
-            PSCT_SETTINGS.conditionColor = DEFAULT_CONDITION_COLOR;
-            localStorage.setItem(STORAGE_KEY_CONDITION, DEFAULT_CONDITION_COLOR);
-            condInput.value = DEFAULT_CONDITION_COLOR;
-            forceReRender();
-        });
-
-        toggleCost.addEventListener('change', (e) => {
-            PSCT_SETTINGS.enableCost = e.target.checked;
-            localStorage.setItem(STORAGE_KEY_ENABLE_COST, e.target.checked);
-            forceReRender();
-        });
-
-        costInput.addEventListener('input', (e) => {
-            PSCT_SETTINGS.costColor = e.target.value;
-            localStorage.setItem(STORAGE_KEY_COST, e.target.value);
-            forceReRender();
-        });
-
-        resetCostBtn.addEventListener('click', () => {
-            PSCT_SETTINGS.costColor = DEFAULT_COST_COLOR;
-            localStorage.setItem(STORAGE_KEY_COST, DEFAULT_COST_COLOR);
-            costInput.value = DEFAULT_COST_COLOR;
-            forceReRender();
-        });
-
-        toggleSummon.addEventListener('change', (e) => {
-            PSCT_SETTINGS.enableSummon = e.target.checked;
-            localStorage.setItem(STORAGE_KEY_ENABLE_SUMMON, e.target.checked);
-            forceReRender();
-        });
-
-        summonInput.addEventListener('input', (e) => {
-            PSCT_SETTINGS.summonColor = e.target.value;
-            localStorage.setItem(STORAGE_KEY_SUMMON, e.target.value);
-            forceReRender();
-        });
-
-        resetSummonBtn.addEventListener('click', () => {
-            PSCT_SETTINGS.summonColor = DEFAULT_SUMMON_COLOR;
-            localStorage.setItem(STORAGE_KEY_SUMMON, DEFAULT_SUMMON_COLOR);
-            summonInput.value = DEFAULT_SUMMON_COLOR;
-            forceReRender();
-        });
-
-        toggleNames.addEventListener('change', (e) => {
-            PSCT_SETTINGS.enableCardNames = e.target.checked;
-            localStorage.setItem(STORAGE_KEY_ENABLE_NAMES, e.target.checked);
-            forceReRender();
-        });
-
-        toggleQuick.addEventListener('change', (e) => {
-            PSCT_SETTINGS.enableQuickEffect = e.target.checked;
-            localStorage.setItem(STORAGE_KEY_ENABLE_QUICK, e.target.checked);
-            forceReRender();
-        });
-
-        toggleUseLimits.addEventListener('change', (e) => {
-            PSCT_SETTINGS.enableUseLimits = e.target.checked;
-            localStorage.setItem(STORAGE_KEY_ENABLE_USE_LIMITS, e.target.checked);
-            forceReRender();
-        });
-
-        toggleGap.addEventListener('change', (e) => {
-            PSCT_SETTINGS.gapEnabled = e.target.checked;
-            localStorage.setItem(STORAGE_KEY_GAP_ENABLED, e.target.checked);
-            forceReRender();
-        });
-
-        gapInput.addEventListener('input', (e) => {
-            const val = parseInt(e.target.value, 10) || 0;
-            PSCT_SETTINGS.spacingGap = val;
-            localStorage.setItem(STORAGE_KEY_SPACING_GAP, val);
-            forceReRender();
-        });
-
-        resetGapBtn.addEventListener('click', () => {
-            PSCT_SETTINGS.spacingGap = DEFAULT_SPACING_GAP;
-            localStorage.setItem(STORAGE_KEY_SPACING_GAP, DEFAULT_SPACING_GAP);
-            gapInput.value = DEFAULT_SPACING_GAP;
-            forceReRender();
-        });
+        // Attach event listeners to all controls
+        const bindings = createEventListenerBindings(panel);
+        attachEventListeners(bindings);
     }
 
     // ==========================================
@@ -674,12 +760,17 @@
     // ==========================================
     /**
      * Sets up a global MutationObserver to continuously scan and format dynamically loaded card descriptions.
+     * Uses debouncing to avoid excessive processing.
      */
     function setupGlobalObserver() {
         const observer = new MutationObserver(() => {
-            if (isProcessing) return;
-            findAndProcessContainers();
-            injectPSCTSettingsUI();
+            if (isProcessing || processingTimer) return;
+            
+            processingTimer = setTimeout(() => {
+                findAndProcessContainers();
+                injectPSCTSettingsUI();
+                processingTimer = null;
+            }, 300); // Debounce by 300ms
         });
 
         observer.observe(document.body, {
