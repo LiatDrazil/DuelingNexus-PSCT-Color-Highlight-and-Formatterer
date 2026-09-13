@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         DuelingNexus - PSCT Color Highlighter & Formatter
 // @namespace    https://github.com/LiatDrazil
-// @version      2.6.0
-// @description  Highlights PSCT conditions/costs, italicizes card names, and provides custom line spacing controls
+// @version      2.9.2
+// @description  Highlights PSCT conditions/costs, italicizes card names, bolds Quick Effects, and provides custom line spacing controls
 // @author       LiatDrazil
 // @match        https://duelingnexus.com/duel/*
 // @match        https://duelingnexus.com/replay/*
@@ -26,6 +26,7 @@
     const STORAGE_KEY_COST = 'psct_color_cost';
     const STORAGE_KEY_ENABLE_COLORS = 'psct_enable_colors';
     const STORAGE_KEY_ENABLE_NAMES = 'psct_enable_names';
+    const STORAGE_KEY_ENABLE_QUICK = 'psct_enable_quick';
     const STORAGE_KEY_SPACING_GAP = 'psct_spacing_gap';
     const STORAGE_KEY_GAP_ENABLED = 'psct_gap_enabled';
 
@@ -35,6 +36,7 @@
         costColor: localStorage.getItem(STORAGE_KEY_COST) || DEFAULT_COST_COLOR,
         enableColors: localStorage.getItem(STORAGE_KEY_ENABLE_COLORS) !== 'false',
         enableCardNames: localStorage.getItem(STORAGE_KEY_ENABLE_NAMES) !== 'false',
+        enableQuickEffect: localStorage.getItem(STORAGE_KEY_ENABLE_QUICK) !== 'false',
         spacingGap: parseInt(localStorage.getItem(STORAGE_KEY_SPACING_GAP) || DEFAULT_SPACING_GAP, 10),
         gapEnabled: localStorage.getItem(STORAGE_KEY_GAP_ENABLED) !== 'false'
     };
@@ -57,7 +59,7 @@
 
         for (let i = 0; i < str.length; i++) {
             const current = str[i];
-
+            
             if (current === '"' || current === '“' || current === '”') {
                 inQuotes = !inQuotes;
             } else if (current === char && !inQuotes) {
@@ -68,14 +70,24 @@
     }
 
     /**
-     * Replaces quoted text (card names) with italicized HTML spans if enabled (without changing color).
+     * Replaces quoted text (card names) and Quick Effect mentions with appropriate styles.
      */
     function formatCardNames(text) {
-        if (!PSCT_SETTINGS.enableCardNames || !text) return escapeHTML(text);
+        if (!text) return "";
+        let escaped = escapeHTML(text);
 
-        return escapeHTML(text).replace(/(?:"|“)(.*?)(?:"|”)/g, (match, name) => {
-            return `<span style="font-style: italic;">"${name}"</span>`;
-        });
+        if (PSCT_SETTINGS.enableCardNames) {
+            escaped = escaped.replace(/(?:"|“)(.*?)(?:"|”)/g, (match, name) => {
+                return `<span style="font-style: italic;">"${name}"</span>`;
+            });
+        }
+
+        if (PSCT_SETTINGS.enableQuickEffect) {
+            // Matches "(Quick Effect)", "Quick Effect", and "Quick effects" (case-insensitive for safety)
+            escaped = escaped.replace(/(\(Quick Effect\)|\bQuick Effects?\b)/gi, '<strong style="font-weight: bold;">$1</strong>');
+        }
+
+        return escaped;
     }
 
     /**
@@ -97,7 +109,7 @@
             return `<span style="color: ${PSCT_SETTINGS.conditionColor}; font-weight: 500;">${formatCardNames(conditionPart)}</span>` +
                    `<span style="color: ${PSCT_SETTINGS.costColor}; font-weight: 500;">${formatCardNames(costPart)}</span>` +
                    formatCardNames(effectPart);
-        }
+        } 
         // Case 2: Only Condition (:) is present
         else if (colonIndex !== -1) {
             const conditionPart = text.substring(0, colonIndex + 1);
@@ -105,7 +117,7 @@
 
             return `<span style="color: ${PSCT_SETTINGS.conditionColor}; font-weight: 500;">${formatCardNames(conditionPart)}</span>` +
                    formatCardNames(effectPart);
-        }
+        } 
         // Case 3: Only Cost (;) is present
         else if (semicolonIndex !== -1) {
             const costPart = text.substring(0, semicolonIndex + 1);
@@ -138,7 +150,7 @@
                 parenDepth++;
             } else if (char === ')' && !inQuotes) {
                 if (parenDepth > 0) parenDepth--;
-
+                
                 if (parenDepth === 0 && waitingToBreakAfterParen) {
                     sentences.push(current);
                     current = "";
@@ -146,8 +158,8 @@
                 }
             } else if (char === '.' && !inQuotes && parenDepth === 0) {
                 let rest = text.substring(i + 1).trimStart();
-
-                if (rest.startsWith('(Quick Effect)')) {
+                
+                if (/^(\(Quick Effect\)|\bQuick Effects?\b)/i.test(rest)) {
                     sentences.push(current);
                     current = "";
                     continue;
@@ -180,9 +192,9 @@
 
         const processedLines = rawLines.map(line => {
             if (!line.trim()) return '';
-
+            
             const sentences = splitIntoSentences(line);
-
+            
             return sentences
                 .map(sentence => highlightPSCTInBlock(sentence))
                 .filter(s => s && s.length > 0)
@@ -332,8 +344,14 @@
 
             <!-- Enable Italic Card Names Toggle -->
             <div style="display: flex; justify-content: space-between; align-items: center;">
-                <label for="psct-toggle-names">Italics for Card Names ("..."):</label>
+                <label for="psct-toggle-names" style="font-style: italic;">Italics for Card Names ("..."):</label>
                 <input type="checkbox" id="psct-toggle-names" ${PSCT_SETTINGS.enableCardNames ? 'checked' : ''} style="cursor: pointer;">
+            </div>
+
+            <!-- Enable Bold Quick Effect Toggle -->
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <label for="psct-toggle-quick" style="font-weight: bold;">Bold Quick Effects:</label>
+                <input type="checkbox" id="psct-toggle-quick" ${PSCT_SETTINGS.enableQuickEffect ? 'checked' : ''} style="cursor: pointer;">
             </div>
 
             <hr style="border: 0; border-top: 1px solid #44475a; margin: 2px 0;">
@@ -378,6 +396,7 @@
         const costInput = document.getElementById('psct-cost-color');
         const resetColorsBtn = document.getElementById('psct-reset-colors');
         const toggleNames = document.getElementById('psct-toggle-names');
+        const toggleQuick = document.getElementById('psct-toggle-quick');
         const toggleGap = document.getElementById('psct-toggle-gap');
         const gapInput = document.getElementById('psct-gap-input');
         const resetGapBtn = document.getElementById('psct-reset-gap');
@@ -416,6 +435,12 @@
         toggleNames.addEventListener('change', (e) => {
             PSCT_SETTINGS.enableCardNames = e.target.checked;
             localStorage.setItem(STORAGE_KEY_ENABLE_NAMES, e.target.checked);
+            forceReRender();
+        });
+
+        toggleQuick.addEventListener('change', (e) => {
+            PSCT_SETTINGS.enableQuickEffect = e.target.checked;
+            localStorage.setItem(STORAGE_KEY_ENABLE_QUICK, e.target.checked);
             forceReRender();
         });
 
