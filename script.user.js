@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         DuelingNexus - PSCT Color Highlighter & Formatter
 // @namespace    https://github.com/LiatDrazil
-// @version      2.9.2
-// @description  Highlights PSCT conditions/costs, italicizes card names, bolds Quick Effects, and provides custom line spacing controls
+// @version      2.9.21
+// @description  Highlights PSCT conditions/costs, custom summon procedures with individual color toggles & per-color reset buttons, italicizes card names, bolds Quick Effects, and provides custom line spacing controls
 // @author       LiatDrazil
 // @match        https://duelingnexus.com/duel/*
 // @match        https://duelingnexus.com/replay/*
@@ -19,12 +19,17 @@
     // Default values
     const DEFAULT_CONDITION_COLOR = '#F1FA8C';
     const DEFAULT_COST_COLOR = '#FF79C6';
+    const DEFAULT_SUMMON_COLOR = '#8BE9FD'; // Cyan style for Summon Conditions
     const DEFAULT_SPACING_GAP = 10;
 
     // Storage keys for user settings
     const STORAGE_KEY_CONDITION = 'psct_color_condition';
     const STORAGE_KEY_COST = 'psct_color_cost';
+    const STORAGE_KEY_SUMMON = 'psct_color_summon';
     const STORAGE_KEY_ENABLE_COLORS = 'psct_enable_colors';
+    const STORAGE_KEY_ENABLE_CONDITION = 'psct_enable_condition';
+    const STORAGE_KEY_ENABLE_COST = 'psct_enable_cost';
+    const STORAGE_KEY_ENABLE_SUMMON = 'psct_enable_summon';
     const STORAGE_KEY_ENABLE_NAMES = 'psct_enable_names';
     const STORAGE_KEY_ENABLE_QUICK = 'psct_enable_quick';
     const STORAGE_KEY_SPACING_GAP = 'psct_spacing_gap';
@@ -34,7 +39,11 @@
     let PSCT_SETTINGS = {
         conditionColor: localStorage.getItem(STORAGE_KEY_CONDITION) || DEFAULT_CONDITION_COLOR,
         costColor: localStorage.getItem(STORAGE_KEY_COST) || DEFAULT_COST_COLOR,
+        summonColor: localStorage.getItem(STORAGE_KEY_SUMMON) || DEFAULT_SUMMON_COLOR,
         enableColors: localStorage.getItem(STORAGE_KEY_ENABLE_COLORS) !== 'false',
+        enableCondition: localStorage.getItem(STORAGE_KEY_ENABLE_CONDITION) !== 'false',
+        enableCost: localStorage.getItem(STORAGE_KEY_ENABLE_COST) !== 'false',
+        enableSummon: localStorage.getItem(STORAGE_KEY_ENABLE_SUMMON) !== 'false',
         enableCardNames: localStorage.getItem(STORAGE_KEY_ENABLE_NAMES) !== 'false',
         enableQuickEffect: localStorage.getItem(STORAGE_KEY_ENABLE_QUICK) !== 'false',
         spacingGap: parseInt(localStorage.getItem(STORAGE_KEY_SPACING_GAP) || DEFAULT_SPACING_GAP, 10),
@@ -83,7 +92,6 @@
         }
 
         if (PSCT_SETTINGS.enableQuickEffect) {
-            // Matches "(Quick Effect)", "Quick Effect", and "Quick effects" (case-insensitive for safety)
             escaped = escaped.replace(/(\(Quick Effect\)|\bQuick Effects?\b)/gi, '<strong style="font-weight: bold;">$1</strong>');
         }
 
@@ -91,10 +99,73 @@
     }
 
     /**
-     * Wraps conditions and costs in custom-colored HTML <span> tags if colors are enabled.
+     * Checks if a sentence represents or contains a Summon Condition.
+     */
+    function isSummonCondition(text) {
+        if (!text) return false;
+        
+        // Summon conditions must not contain activation conditions (:) or activation costs (;)
+        if (text.includes(':') || text.includes(';')) return false;
+
+        const lower = text.trim().toLowerCase();
+
+        // Must contain the word "by" as a whole word to be evaluated
+        const hasBy = /\bby\b/.test(lower);
+        if (!hasBy) return false;
+
+        // Strip/remove invalid "by" occurrences to check if at least one valid "by" remains
+        let cleanedLower = lower
+            .replace(/by\s+its\s+own\s+effect/g, '')
+            .replace(/by\s+other\s+ways/g, '')
+            .replace(/by\s+(?:["“].*?["”])/g, '');
+
+        // If after cleaning all forbidden patterns there are no more "by" words left, it's invalid
+        const hasValidBy = /\bby\b/.test(cleanedLower);
+        if (!hasValidBy) return false;
+        
+        const summonKeywords = [
+            "must be either",
+            "must be special summoned",
+            "must first be special summoned",
+            "must be fusion summoned",
+            "must be synchro summoned",
+            "must be xyz summoned",
+            "must be link summoned",
+            "must be ritual summoned",
+            "you can special summon this card",
+            "must first be fusion summoned",
+            "must first be synchro summoned",
+            "must first be xyz summoned",
+            "must first be link summoned",
+            "must first be ritual summoned",
+            "summon this card"
+        ];
+        
+        const hasKeyword = summonKeywords.some(keyword => lower.includes(keyword));
+        const hasAlternativeSummonPattern = /you can.*(?:summon).*this card/i.test(lower);
+
+        return hasKeyword || hasAlternativeSummonPattern;
+    }
+
+    /**
+     * Formats summon conditions.
+     */
+    function formatSummonCondition(text) {
+        if (!PSCT_SETTINGS.enableColors || !PSCT_SETTINGS.enableSummon) return formatCardNames(text);
+
+        return `<span style="color: ${PSCT_SETTINGS.summonColor}; font-weight: 500;">${formatCardNames(text)}</span>`;
+    }
+
+    /**
+     * Wraps conditions, costs, and summon conditions in custom-colored HTML <span> tags if colors are enabled.
      */
     function highlightPSCTInBlock(text) {
         if (!text || !text.trim()) return text;
+
+        if (isSummonCondition(text)) {
+            return formatSummonCondition(text);
+        }
+
         if (!PSCT_SETTINGS.enableColors) return formatCardNames(text);
 
         const colonIndex = findPSCTPunctuation(text, ':');
@@ -106,25 +177,37 @@
             const costPart = text.substring(colonIndex + 1, semicolonIndex + 1);
             const effectPart = text.substring(semicolonIndex + 1);
 
-            return `<span style="color: ${PSCT_SETTINGS.conditionColor}; font-weight: 500;">${formatCardNames(conditionPart)}</span>` +
-                   `<span style="color: ${PSCT_SETTINGS.costColor}; font-weight: 500;">${formatCardNames(costPart)}</span>` +
-                   formatCardNames(effectPart);
+            const condOutput = PSCT_SETTINGS.enableCondition 
+                ? `<span style="color: ${PSCT_SETTINGS.conditionColor}; font-weight: 500;">${formatCardNames(conditionPart)}</span>` 
+                : formatCardNames(conditionPart);
+
+            const costOutput = PSCT_SETTINGS.enableCost 
+                ? `<span style="color: ${PSCT_SETTINGS.costColor}; font-weight: 500;">${formatCardNames(costPart)}</span>` 
+                : formatCardNames(costPart);
+
+            return condOutput + costOutput + formatCardNames(effectPart);
         } 
         // Case 2: Only Condition (:) is present
         else if (colonIndex !== -1) {
             const conditionPart = text.substring(0, colonIndex + 1);
             const effectPart = text.substring(colonIndex + 1);
 
-            return `<span style="color: ${PSCT_SETTINGS.conditionColor}; font-weight: 500;">${formatCardNames(conditionPart)}</span>` +
-                   formatCardNames(effectPart);
+            const condOutput = PSCT_SETTINGS.enableCondition 
+                ? `<span style="color: ${PSCT_SETTINGS.conditionColor}; font-weight: 500;">${formatCardNames(conditionPart)}</span>` 
+                : formatCardNames(conditionPart);
+
+            return condOutput + formatCardNames(effectPart);
         } 
         // Case 3: Only Cost (;) is present
         else if (semicolonIndex !== -1) {
             const costPart = text.substring(0, semicolonIndex + 1);
             const effectPart = text.substring(semicolonIndex + 1);
 
-            return `<span style="color: ${PSCT_SETTINGS.costColor}; font-weight: 500;">${formatCardNames(costPart)}</span>` +
-                   formatCardNames(effectPart);
+            const costOutput = PSCT_SETTINGS.enableCost 
+                ? `<span style="color: ${PSCT_SETTINGS.costColor}; font-weight: 500;">${formatCardNames(costPart)}</span>` 
+                : formatCardNames(costPart);
+
+            return costOutput + formatCardNames(effectPart);
         }
 
         return formatCardNames(text);
@@ -302,7 +385,7 @@
             box-shadow: 0 4px 12px rgba(0,0,0,0.5);
             font-family: sans-serif;
             font-size: 13px;
-            min-width: 250px;
+            min-width: 290px;
         `;
 
         panel.innerHTML = `
@@ -310,35 +393,47 @@
                 PSCT Format & Colors
             </div>
 
-            <!-- Enable Highlights Toggle -->
+            <!-- Master Color Toggle -->
             <div style="display: flex; justify-content: space-between; align-items: center;">
-                <label for="psct-toggle-colors">Enable PSCT Colors:</label>
+                <label for="psct-toggle-colors">Enable All PSCT Colors:</label>
                 <input type="checkbox" id="psct-toggle-colors" ${PSCT_SETTINGS.enableColors ? 'checked' : ''} style="cursor: pointer;">
             </div>
 
-            <!-- Condition Color Picker -->
+            <!-- Condition Color Control -->
             <div style="display: flex; justify-content: space-between; align-items: center;">
-                <label for="psct-cond-color">Condition (:):</label>
-                <input type="color" id="psct-cond-color" value="${PSCT_SETTINGS.conditionColor}" style="cursor: pointer; border: none; background: transparent; width: 30px; height: 30px;">
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <input type="checkbox" id="psct-toggle-cond" ${PSCT_SETTINGS.enableCondition ? 'checked' : ''} style="cursor: pointer;" title="Toggle Condition Color">
+                    <label for="psct-cond-color">Condition (:):</label>
+                </div>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <input type="color" id="psct-cond-color" value="${PSCT_SETTINGS.conditionColor}" style="cursor: pointer; border: none; background: transparent; width: 26px; height: 26px;">
+                    <button id="psct-reset-cond" title="Reset Condition Color" style="background: #44475a; color: #f8f8f2; border: 1px solid #6272a4; border-radius: 3px; width: 22px; height: 22px; font-size: 11px; cursor: pointer; display: flex; align-items: center; justify-content: center;">↺</button>
+                </div>
             </div>
 
-            <!-- Cost Color Picker -->
+            <!-- Cost Color Control -->
             <div style="display: flex; justify-content: space-between; align-items: center;">
-                <label for="psct-cost-color">Cost (;):</label>
-                <input type="color" id="psct-cost-color" value="${PSCT_SETTINGS.costColor}" style="cursor: pointer; border: none; background: transparent; width: 30px; height: 30px;">
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <input type="checkbox" id="psct-toggle-cost" ${PSCT_SETTINGS.enableCost ? 'checked' : ''} style="cursor: pointer;" title="Toggle Cost Color">
+                    <label for="psct-cost-color">Cost (;):</label>
+                </div>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <input type="color" id="psct-cost-color" value="${PSCT_SETTINGS.costColor}" style="cursor: pointer; border: none; background: transparent; width: 26px; height: 26px;">
+                    <button id="psct-reset-cost" title="Reset Cost Color" style="background: #44475a; color: #f8f8f2; border: 1px solid #6272a4; border-radius: 3px; width: 22px; height: 22px; font-size: 11px; cursor: pointer; display: flex; align-items: center; justify-content: center;">↺</button>
+                </div>
             </div>
 
-            <!-- Reset Colors Button -->
-            <button id="psct-reset-colors" style="
-                background: #44475a;
-                color: #f8f8f2;
-                border: 1px solid #6272a4;
-                border-radius: 4px;
-                padding: 4px 8px;
-                font-size: 11px;
-                cursor: pointer;
-                transition: background 0.2s;
-            ">↺ Reset Colors to Default</button>
+            <!-- Summon Condition Color Control -->
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <input type="checkbox" id="psct-toggle-summon" ${PSCT_SETTINGS.enableSummon ? 'checked' : ''} style="cursor: pointer;" title="Toggle Summon Condition Color">
+                    <label for="psct-summon-color">Summon Condition:</label>
+                </div>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <input type="color" id="psct-summon-color" value="${PSCT_SETTINGS.summonColor}" style="cursor: pointer; border: none; background: transparent; width: 26px; height: 26px;">
+                    <button id="psct-reset-summon" title="Reset Summon Color" style="background: #44475a; color: #f8f8f2; border: 1px solid #6272a4; border-radius: 3px; width: 22px; height: 22px; font-size: 11px; cursor: pointer; display: flex; align-items: center; justify-content: center;">↺</button>
+                </div>
+            </div>
 
             <hr style="border: 0; border-top: 1px solid #44475a; margin: 2px 0;">
 
@@ -392,9 +487,18 @@
 
         // UI Event Listeners
         const toggleColors = document.getElementById('psct-toggle-colors');
+        const toggleCond = document.getElementById('psct-toggle-cond');
         const condInput = document.getElementById('psct-cond-color');
+        const resetCondBtn = document.getElementById('psct-reset-cond');
+
+        const toggleCost = document.getElementById('psct-toggle-cost');
         const costInput = document.getElementById('psct-cost-color');
-        const resetColorsBtn = document.getElementById('psct-reset-colors');
+        const resetCostBtn = document.getElementById('psct-reset-cost');
+
+        const toggleSummon = document.getElementById('psct-toggle-summon');
+        const summonInput = document.getElementById('psct-summon-color');
+        const resetSummonBtn = document.getElementById('psct-reset-summon');
+
         const toggleNames = document.getElementById('psct-toggle-names');
         const toggleQuick = document.getElementById('psct-toggle-quick');
         const toggleGap = document.getElementById('psct-toggle-gap');
@@ -407,9 +511,28 @@
             forceReRender();
         });
 
+        toggleCond.addEventListener('change', (e) => {
+            PSCT_SETTINGS.enableCondition = e.target.checked;
+            localStorage.setItem(STORAGE_KEY_ENABLE_CONDITION, e.target.checked);
+            forceReRender();
+        });
+
         condInput.addEventListener('input', (e) => {
             PSCT_SETTINGS.conditionColor = e.target.value;
             localStorage.setItem(STORAGE_KEY_CONDITION, e.target.value);
+            forceReRender();
+        });
+
+        resetCondBtn.addEventListener('click', () => {
+            PSCT_SETTINGS.conditionColor = DEFAULT_CONDITION_COLOR;
+            localStorage.setItem(STORAGE_KEY_CONDITION, DEFAULT_CONDITION_COLOR);
+            condInput.value = DEFAULT_CONDITION_COLOR;
+            forceReRender();
+        });
+
+        toggleCost.addEventListener('change', (e) => {
+            PSCT_SETTINGS.enableCost = e.target.checked;
+            localStorage.setItem(STORAGE_KEY_ENABLE_COST, e.target.checked);
             forceReRender();
         });
 
@@ -419,16 +542,29 @@
             forceReRender();
         });
 
-        resetColorsBtn.addEventListener('click', () => {
-            PSCT_SETTINGS.conditionColor = DEFAULT_CONDITION_COLOR;
+        resetCostBtn.addEventListener('click', () => {
             PSCT_SETTINGS.costColor = DEFAULT_COST_COLOR;
-
-            localStorage.setItem(STORAGE_KEY_CONDITION, DEFAULT_CONDITION_COLOR);
             localStorage.setItem(STORAGE_KEY_COST, DEFAULT_COST_COLOR);
-
-            condInput.value = DEFAULT_CONDITION_COLOR;
             costInput.value = DEFAULT_COST_COLOR;
+            forceReRender();
+        });
 
+        toggleSummon.addEventListener('change', (e) => {
+            PSCT_SETTINGS.enableSummon = e.target.checked;
+            localStorage.setItem(STORAGE_KEY_ENABLE_SUMMON, e.target.checked);
+            forceReRender();
+        });
+
+        summonInput.addEventListener('input', (e) => {
+            PSCT_SETTINGS.summonColor = e.target.value;
+            localStorage.setItem(STORAGE_KEY_SUMMON, e.target.value);
+            forceReRender();
+        });
+
+        resetSummonBtn.addEventListener('click', () => {
+            PSCT_SETTINGS.summonColor = DEFAULT_SUMMON_COLOR;
+            localStorage.setItem(STORAGE_KEY_SUMMON, DEFAULT_SUMMON_COLOR);
+            summonInput.value = DEFAULT_SUMMON_COLOR;
             forceReRender();
         });
 
