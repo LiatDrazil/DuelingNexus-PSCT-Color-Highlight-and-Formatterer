@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         DuelingNexus - PSCT Color Highlighter & Formatter
 // @namespace    https://github.com/LiatDrazil
-// @version      2.9.21
-// @description  Highlights PSCT conditions/costs, custom summon procedures with individual color toggles & per-color reset buttons, italicizes card names, bolds Quick Effects, and provides custom line spacing controls
+// @version      2.9.26
+// @description  Highlights PSCT conditions, costs, and summon conditions, formats card names and Quick Effects, with custom spacing controls.
 // @author       LiatDrazil
 // @match        https://duelingnexus.com/duel/*
 // @match        https://duelingnexus.com/replay/*
@@ -104,10 +104,13 @@
     function isSummonCondition(text) {
         if (!text) return false;
         
-        // Summon conditions must not contain activation conditions (:) or activation costs (;)
-        if (text.includes(':') || text.includes(';')) return false;
-
         const lower = text.trim().toLowerCase();
+
+        // If it contains a semicolon (;), it is never a summon condition (activation cost)
+        if (text.includes(';')) return false;
+
+        // If it contains a colon (:), we only accept it if it is strictly a summon clause
+        if (text.includes(':') && !lower.includes("summon")) return false;
 
         // Must contain the word "by" as a whole word to be evaluated
         const hasBy = /\bby\b/.test(lower);
@@ -142,7 +145,10 @@
         ];
         
         const hasKeyword = summonKeywords.some(keyword => lower.includes(keyword));
-        const hasAlternativeSummonPattern = /you can.*(?:summon).*this card/i.test(lower);
+        
+        // For "you can also", we strictly require it to be accompanied explicitly by a Summon action
+        const hasStrictAlsoSummon = /you can also.*(?:summon)/i.test(lower);
+        const hasAlternativeSummonPattern = /you can.*(?:summon).*this card/i.test(lower) || hasStrictAlsoSummon;
 
         return hasKeyword || hasAlternativeSummonPattern;
     }
