@@ -463,7 +463,7 @@
                 </div>
                 <div style="display: flex; align-items: center; gap: 6px;">
                     <input type="color" id="psct-summon-color" value="${PSCT_SETTINGS.summonColor}" style="cursor: pointer; border: none; background: transparent; width: 26px; height: 26px;">
-                    <button id="psct-reset-summon" title="Reset Summon Color" style="background: #44475a; color: #f8f8f2; border: 1px solid #6272a4; border-radius: 3px; width: 22px; height: 22px; font-size: 10px; cursor: pointer; padding: 0; display: flex; align-items: center; justify-content: center;">↺</button>
+                    <button id="psct-reset-summon" title="Reset Summon Color" style="background: #44475a; color: #f8f8f2; border: 1px solid #6272a4; border-radius: 3px; width: 22px; height: 22px; font-size: 10px; cursor: pointer;">↺</button>
                 </div>
             </div>
 
@@ -475,7 +475,7 @@
                 </div>
                 <div style="display: flex; align-items: center; gap: 6px;">
                     <input type="color" id="psct-cond-color" value="${PSCT_SETTINGS.conditionColor}" style="cursor: pointer; border: none; background: transparent; width: 26px; height: 26px;">
-                    <button id="psct-reset-cond" title="Reset Condition Color" style="background: #44475a; color: #f8f8f2; border: 1px solid #6272a4; border-radius: 3px; width: 22px; height: 22px; font-size: 10px; cursor: pointer; padding: 0; display: flex; align-items: center; justify-content: center;">↺</button>
+                    <button id="psct-reset-cond" title="Reset Condition Color" style="background: #44475a; color: #f8f8f2; border: 1px solid #6272a4; border-radius: 3px; width: 22px; height: 22px; font-size: 10px; cursor: pointer;">↺</button>
                 </div>
             </div>
 
@@ -487,7 +487,7 @@
                 </div>
                 <div style="display: flex; align-items: center; gap: 6px;">
                     <input type="color" id="psct-cost-color" value="${PSCT_SETTINGS.costColor}" style="cursor: pointer; border: none; background: transparent; width: 26px; height: 26px;">
-                    <button id="psct-reset-cost" title="Reset Cost Color" style="background: #44475a; color: #f8f8f2; border: 1px solid #6272a4; border-radius: 3px; width: 22px; height: 22px; font-size: 10px; cursor: pointer; padding: 0; display: flex; align-items: center; justify-content: center;">↺</button>
+                    <button id="psct-reset-cost" title="Reset Cost Color" style="background: #44475a; color: #f8f8f2; border: 1px solid #6272a4; border-radius: 3px; width: 22px; height: 22px; font-size: 10px; cursor: pointer;">↺</button>
                 </div>
             </div>
 
@@ -523,7 +523,7 @@
             <div id="psct-gap-container" style="display: flex; flex-direction: column; gap: 6px; background: #1e1f29; padding: 8px; border-radius: 4px;">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <label for="psct-gap-input">Gap Size (px):</label>
-                    <input type="number" id="psct-gap-input" value="${PSCT_SETTINGS.spacingGap}" min="0" max="50" style="width: 50px; background: #282a36; color: #f8f8f2; border: 1px solid #6272a4; border-radius: 3px; padding: 2px 4px;">
+                    <input type="number" id="psct-gap-input" value="${PSCT_SETTINGS.spacingGap}" min="0" max="50" style="width: 50px; background: #282a36; color: #f8f8f2; border: 1px solid #6272a4; border-radius: 3px; padding: 2px; text-align: center;">
                 </div>
                 <button id="psct-reset-gap" style="
                     background: #44475a;
@@ -579,7 +579,7 @@
         bindings.condition.addEventListener('change', (e) => {
             PSCT_SETTINGS.enableCondition = e.target.checked;
             localStorage.setItem(STORAGE_KEYS.enableCondition, e.target.checked);
-            forceReRender();
+            forceReReRender();
         });
 
         bindings.conditionColor.addEventListener('input', (e) => {
@@ -760,17 +760,13 @@
     // ==========================================
     /**
      * Sets up a global MutationObserver to continuously scan and format dynamically loaded card descriptions.
-     * Uses debouncing to avoid excessive processing.
      */
     function setupGlobalObserver() {
         const observer = new MutationObserver(() => {
-            if (isProcessing || processingTimer) return;
+            if (isProcessing) return;
             
-            processingTimer = setTimeout(() => {
-                findAndProcessContainers();
-                injectPSCTSettingsUI();
-                processingTimer = null;
-            }, 300); // Debounce by 300ms
+            findAndProcessContainers();
+            injectPSCTSettingsUI();
         });
 
         observer.observe(document.body, {
