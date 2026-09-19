@@ -27,7 +27,7 @@ To use this userscript, you need a browser extension that supports userscripts (
 
 1. Install a userscript manager extension for your browser:
    * [Tampermonkey for Chrome/Firefox/Edge](https://www.tampermonkey.net/)
-2. Click install the [script](https://raw.githubusercontent.com/LiatDrazil/DuelingNexus-PSCT-Color-Highlight-and-Formatterer/main/script.user.js)
+2. Install the [script](https://raw.githubusercontent.com/LiatDrazil/DuelingNexus-PSCT-Color-Highlight-and-Formatterer/main/script.user.js).
 
 ---
 
