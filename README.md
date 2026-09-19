@@ -4,6 +4,8 @@ A feature-rich Tampermonkey userscript designed for **DuelingNexus** to enhance 
 
 ---
 
+![EffectExemple](./images/EffectExemple.png) ![Settings](./images/Settings.png)
+
 ## Features
 
 * **PSCT Color Highlighting:**
